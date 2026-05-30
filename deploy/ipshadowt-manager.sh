@@ -746,8 +746,13 @@ add_client_tunnel() {
     local transport="tcpmux"
     case $tc in 1) transport="reality";; 2) transport="kcp";; 3) transport="wsmux";; 5) transport="shadowtls";; esac
 
-    local count=$(ls ${CONFIG_DIR}/tunnel-*.toml 2>/dev/null | wc -l)
-    local sp=$((1080 + count + 1))
+    # Auto-detect next SOCKS5 port
+    local last_socks=$(grep -rh 'type = "socks5"' ${CONFIG_DIR}/*.toml 2>/dev/null | wc -l)
+    local sp=$((1080 + last_socks))
+    # Check if port is in use, increment if needed
+    while ss -tuln 2>/dev/null | grep -q ":${sp} "; do
+        sp=$((sp + 1))
+    done
     msg_ask "SOCKS5 port [${sp}]: "; read -r usp
     sp=${usp:-$sp}
 
