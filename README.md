@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/main/VERSION"><img src="https://img.shields.io/badge/version-v1.0.0-blue?style=flat-square" alt="Version"/></a>
-  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v1.0.0-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform"/></a>
 </p>
@@ -61,7 +61,7 @@ chmod +x ipshadowt-linux-amd64
 Or use the one-line installer:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/main/deploy/ipshadowt-manager.sh)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh)
 ```
 
 ---
@@ -244,7 +244,7 @@ docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 ipshadowt
 Full interactive management with a single command:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/main/deploy/ipshadowt-manager.sh)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh)
 ```
 
 Features:
