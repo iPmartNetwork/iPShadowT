@@ -3,8 +3,6 @@
 # iPmart Network (Ali Hassanzadeh)
 # https://github.com/iPmartNetwork/iPShadowT
 
-set -e
-
 # ─── Constants ────────────────────────────────────
 VERSION="1.0.0"
 GITHUB_REPO="iPmartNetwork/iPShadowT"
