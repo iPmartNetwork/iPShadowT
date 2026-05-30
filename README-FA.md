@@ -54,7 +54,7 @@ chmod +x ipshadowt-linux-amd64
 یا نصب با یک خط:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh)
+curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh -o ipshadowt-manager.sh && sudo bash ipshadowt-manager.sh
 ```
 
 ---
@@ -234,7 +234,7 @@ docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 ipshadowt
 مدیریت کامل تعاملی با یک دستور:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh)
+curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh -o ipshadowt-manager.sh && sudo bash ipshadowt-manager.sh
 ```
 
 قابلیت‌ها:
@@ -279,3 +279,4 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT
   <br/>
   <sub>© 2026 iPmart Network. تمامی حقوق محفوظ است.</sub>
 </p>
+

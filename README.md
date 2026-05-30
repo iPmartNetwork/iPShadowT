@@ -61,7 +61,7 @@ chmod +x ipshadowt-linux-amd64
 Or use the one-line installer:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh)
+curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh -o ipshadowt-manager.sh && sudo bash ipshadowt-manager.sh
 ```
 
 ---
@@ -244,7 +244,7 @@ docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 ipshadowt
 Full interactive management with a single command:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh)
+curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/deploy/ipshadowt-manager.sh -o ipshadowt-manager.sh && sudo bash ipshadowt-manager.sh
 ```
 
 Features:
@@ -316,3 +316,4 @@ iPShadowT/
   <br/>
   <sub>© 2026 iPmart Network. All rights reserved.</sub>
 </p>
+
