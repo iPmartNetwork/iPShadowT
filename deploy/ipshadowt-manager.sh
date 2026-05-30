@@ -347,9 +347,10 @@ setup_foreign() {
     echo -e "    ${C}3)${N} wsmux       ${D}(CDN)${N}"
     echo -e "    ${C}4)${N} shadowtls   ${D}(no cert)${N}"
     echo -e "    ${C}5)${N} tcpmux      ${D}(simple)${N}"
+    echo -e "    ${C}6)${N} auto-detect ${D}(test from Iran IP)${N}"
     msg_ask "Choice [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="shadowtls";; 5) transport="tcpmux";; esac
+    case $tc in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="shadowtls";; 5) transport="tcpmux";; 6) msg_ask "Iran server IP: "; read -r iran_ip; test_transport "$iran_ip"; msg_ask "Choose transport [1]: "; read -r tc2; case $tc2 in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="shadowtls";; 5) transport="tcpmux";; *) transport="reality";; esac ;; esac
 
     mkdir -p "${CONFIG_DIR}"
     cat > "${CONFIG_DIR}/config.toml" << EOF
