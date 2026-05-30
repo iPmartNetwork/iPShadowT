@@ -225,6 +225,7 @@ do_configure() {
     echo -e "  ${C}3)${N} Edit config manually"
     echo -e "  ${C}4)${N} Show current config"
     echo -e "  ${C}5)${N} Auto-detect best transport"
+    echo -e "  ${C}6)${N} Add Port Forward"
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r choice
@@ -235,6 +236,7 @@ do_configure() {
         3) nano "${CONFIG_DIR}/config.toml" 2>/dev/null || vi "${CONFIG_DIR}/config.toml" ;;
         4) [ -f "${CONFIG_DIR}/config.toml" ] && cat "${CONFIG_DIR}/config.toml" || msg_err "No config" ;;
         5) msg_ask "Server IP: "; read -r ip; test_transport "$ip" ;;
+        6) add_port_forward ;;
         0) return ;;
     esac
     press_enter
@@ -410,6 +412,55 @@ test_transport() {
         fi
     else
         msg_err "TCP/443: Failed -> Recommend: wsmux (via CDN)"
+    fi
+}
+
+add_port_forward() {
+    echo ""
+    print_line
+    echo -e "  ${W}ADD PORT FORWARD${N}"
+    print_line
+    echo ""
+    echo -e "  ${D}Forward a port from this server through the tunnel to the remote server${N}"
+    echo ""
+
+    msg_ask "Name (e.g. vless, ssh, web): "; read -r fname
+    [ -z "$fname" ] && return
+
+    echo ""
+    echo -e "  ${C}1)${N} TCP"
+    echo -e "  ${C}2)${N} UDP"
+    msg_ask "Protocol [1]: "; read -r proto
+    local ftype="tcp"
+    [ "$proto" = "2" ] && ftype="udp"
+
+    msg_ask "Listen port (on THIS server): "; read -r lport
+    [ -z "$lport" ] && return
+
+    msg_ask "Remote port (on FOREIGN server): "; read -r rport
+    [ -z "$rport" ] && return
+
+    # Append to config
+    echo "" >> "${CONFIG_DIR}/config.toml"
+    echo "[[forwards]]" >> "${CONFIG_DIR}/config.toml"
+    echo "name = \"${fname}\"" >> "${CONFIG_DIR}/config.toml"
+    echo "type = \"${ftype}\"" >> "${CONFIG_DIR}/config.toml"
+    echo "listen = \"0.0.0.0:${lport}\"" >> "${CONFIG_DIR}/config.toml"
+    echo "remote = \"${rport}\"" >> "${CONFIG_DIR}/config.toml"
+
+    echo ""
+    msg_ok "Port forward added: ${ftype} :${lport} -> remote:${rport}"
+    msg_warn "Restart service to apply: systemctl restart ipshadowt"
+    echo ""
+    msg_ask "Restart now? [Y/n]: "; read -r ans
+    if [[ "${ans:-y}" == "y" ]]; then
+        systemctl restart ${SERVICE_NAME}
+        sleep 2
+        if ss -tuln | grep -q ":${lport} "; then
+            msg_ok "Port ${lport} is now listening!"
+        else
+            msg_err "Port ${lport} not listening. Check logs: journalctl -u ipshadowt -n 5"
+        fi
     fi
 }
 
