@@ -753,23 +753,22 @@ add_client_tunnel() {
 
     # Ask for port forwards
     echo ""
-    msg_ask "Add port forwards? [y/N]: "; read -r add_fwd
+    msg_ask "Port forwards (comma-separated, e.g. 443,8443,2059) or empty: "; read -r ports_input
     local forwards=""
-    while [[ "$add_fwd" == "y" ]]; do
-        msg_ask "  Forward name: "; read -r fname
-        msg_ask "  Listen port (on this server): "; read -r lport
-        msg_ask "  Remote port (on foreign): "; read -r rport
-        msg_ask "  Protocol (tcp/udp) [tcp]: "; read -r fproto
-        fproto=${fproto:-tcp}
-        forwards="${forwards}
+    if [ -n "$ports_input" ]; then
+        IFS=',' read -ra PORTS <<< "$ports_input"
+        for p in "${PORTS[@]}"; do
+            p=$(echo "$p" | tr -d ' ')
+            [ -z "$p" ] && continue
+            forwards="${forwards}
 [[forwards]]
-name = \"${fname}\"
-type = \"${fproto}\"
-listen = \"0.0.0.0:${lport}\"
-remote = \"${rport}\"
+name = \"fwd-${p}\"
+type = \"tcp\"
+listen = \"0.0.0.0:${p}\"
+remote = \"${p}\"
 "
-        msg_ask "Add another forward? [y/N]: "; read -r add_fwd
-    done
+        done
+    fi
 
     local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
     mkdir -p "${CONFIG_DIR}"
@@ -957,22 +956,65 @@ remove_tunnel() {
 
 # ─── Update ───────────────────────────────────────
 do_update() {
+    print_banner
+    echo -e "  ${W}[ UPDATE ]${N}"
+    echo ""
+    echo -e "  ${C}1)${N} Update binary (download latest from GitHub)"
+    echo -e "  ${C}2)${N} Update manager script"
+    echo -e "  ${C}3)${N} Remove binary only (keep configs)"
+    echo -e "  ${C}0)${N} Back"
+    echo ""
+    msg_ask "Choice: "; read -r c
+    case $c in
+        1) update_binary ;;
+        2) update_script ;;
+        3) remove_binary ;;
+        0) return ;;
+    esac
+    press_enter
+}
+
+update_binary() {
     local cur=$(get_version)
     msg_info "Current: ${cur}"
     msg_info "Checking GitHub..."
     local latest=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
     [ -z "$latest" ] && { msg_err "Cannot reach GitHub"; return; }
-    [ "$cur" = "$latest" ] && { msg_ok "Already up to date"; return; }
+    [ "$cur" = "$latest" ] && { msg_ok "Already up to date (${cur})"; return; }
     msg_ok "New version: ${latest}"
     msg_ask "Update? [Y/n]: "; read -r ans
     if [[ "${ans:-y}" == "y" ]]; then
-        systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+        # Stop all services
+        for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+            systemctl stop "$svc" 2>/dev/null
+        done
         detect_arch
         local url="https://github.com/${GITHUB_REPO}/releases/latest/download/${BINARY_NAME}-${OS}-${ARCH}"
-        curl -fSL -o "${INSTALL_DIR}/${BINARY_NAME}" "$url" && chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-        systemctl start ${SERVICE_NAME}
+        curl -fSL --progress-bar -o "${INSTALL_DIR}/${BINARY_NAME}" "$url" && chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+        # Start all services
+        for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+            systemctl start "$svc" 2>/dev/null
+        done
         msg_ok "Updated to ${latest}!"
     fi
+}
+
+update_script() {
+    msg_info "Downloading latest manager script..."
+    local url="https://raw.githubusercontent.com/${GITHUB_REPO}/master/deploy/ipshadowt-manager.sh"
+    curl -fsSL -o "/root/ipshadowt-manager.sh" "$url" && msg_ok "Script updated! Run: bash ipshadowt-manager.sh" || msg_err "Download failed"
+}
+
+remove_binary() {
+    msg_warn "This removes the binary but keeps configs and services."
+    msg_ask "Continue? [y/N]: "; read -r ans
+    [ "$ans" != "y" ] && return
+    # Stop all
+    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+        systemctl stop "$svc" 2>/dev/null
+    done
+    rm -f "${INSTALL_DIR}/${BINARY_NAME}"
+    msg_ok "Binary removed. Configs still in ${CONFIG_DIR}"
 }
 
 # ─── Uninstall ────────────────────────────────────
@@ -1032,7 +1074,7 @@ main_menu() {
             5) do_keys ;;
             6) do_backup ;;
             7) do_multi ;;
-            8) do_update; press_enter ;;
+            8) do_update ;;
             9) do_uninstall; press_enter ;;
             0) echo ""; msg_ok "Goodbye!"; echo ""; exit 0 ;;
             *) msg_err "Invalid option" ;;
