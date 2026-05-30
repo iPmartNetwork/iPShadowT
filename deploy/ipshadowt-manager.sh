@@ -48,6 +48,14 @@ print_banner() {
     echo -e "  ${D}Anti-DPI Multi-Transport Tunnel Engine${N}"
     echo -e "  ${D}iPmart Network (Ali Hassanzadeh) - v${VERSION}${N}"
     print_dline
+    # Server info
+    local ip=$(curl -s4 --max-time 2 ifconfig.me 2>/dev/null || echo "N/A")
+    local geo=$(curl -s --max-time 2 "http://ip-api.com/line/${ip}?fields=country,city,isp" 2>/dev/null)
+    local country=$(echo "$geo" | sed -n '1p')
+    local city=$(echo "$geo" | sed -n '2p')
+    local isp=$(echo "$geo" | sed -n '3p')
+    echo -e "  ${D}IP: ${W}${ip}${D}  |  ${city}, ${country}  |  ${isp}${N}"
+    print_dline
     echo ""
 }
 
