@@ -917,6 +917,12 @@ stop_all_tunnels() {
     done
 }
 
+restart_all_tunnels() {
+    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+        systemctl restart "$svc" 2>/dev/null && msg_ok "Restarted: $svc"
+    done
+}
+
 list_tunnels() {
     echo ""
     print_line
