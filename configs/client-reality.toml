@@ -1,0 +1,81 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  iPShadowT - Client Configuration (REALITY)
+#  Maximum DPI Resistance Mode
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+mode = "client"
+log_level = "info"
+transport = "reality"
+remote_addr = "your-server.com:443"
+password = "your-secret-password-here"
+
+# Multiplexing
+[mux]
+concurrency = 4
+frame_size = 32768
+
+# Heartbeat
+[heartbeat]
+enabled = true
+interval = 20
+timeout = 40
+
+# Performance
+[performance]
+nodelay = true
+keepalive = 15
+buffer_profile = "balanced"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  REALITY Protocol Settings
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[reality]
+# SNI to mimic (choose a popular website that uses TLS 1.3)
+# Good choices: www.google.com, www.microsoft.com, www.apple.com
+server_name = "www.google.com"
+
+# Server's public key (get from server admin)
+public_key = "YOUR_SERVER_PUBLIC_KEY_HEX"
+
+# Your short ID (get from server admin)
+short_id = "YOUR_SHORT_ID"
+
+# Fallback destination (where probes get redirected)
+dest = "www.google.com:443"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Anti-DPI Settings
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[anti_dpi]
+enabled = true
+
+# TLS fingerprint to mimic
+# Options: chrome, firefox, safari, edge, ios, android, random
+utls_fingerprint = "chrome"
+
+# TLS ClientHello fragmentation
+# Splits the first TLS packet to hide SNI from DPI
+fragment = true
+fragment_size = "40-80"
+
+# Random padding (defeats traffic analysis)
+padding = true
+padding_size = "16-128"
+
+# Traffic shaping (makes traffic look like web browsing)
+# Note: slightly reduces speed but greatly improves stealth
+traffic_shape = false
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Port Forwarding
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[[forwards]]
+name = "socks5-proxy"
+type = "socks5"
+listen = "127.0.0.1:1080"
+
+[[forwards]]
+name = "http-forward"
+type = "tcp"
+listen = "0.0.0.0:8443"
+remote = "0.0.0.0:443"

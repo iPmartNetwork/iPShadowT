@@ -1,0 +1,79 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  iPShadowT - Client Configuration (CDN Mode)
+#  Traffic routed through Cloudflare CDN
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#  How CDN mode works:
+#  1. Your traffic goes to Cloudflare's IP (not your server's IP)
+#  2. Cloudflare forwards it to your server via WebSocket
+#  3. DPI only sees traffic to Cloudflare (which is never blocked)
+#  4. Your server's real IP is completely hidden
+#
+#  Setup:
+#  1. Add your domain to Cloudflare (free plan works)
+#  2. Point DNS to your server IP (orange cloud = proxied)
+#  3. Enable WebSocket in Cloudflare dashboard
+#  4. Use your domain below
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+mode = "client"
+log_level = "info"
+transport = "wsmux"
+remote_addr = "your-domain.com:443"  # Your Cloudflare-proxied domain
+password = "your-secret-password-here"
+
+# TLS is handled by Cloudflare
+tls_cert = ""
+tls_key = ""
+
+# Multiplexing
+[mux]
+concurrency = 4
+frame_size = 16384    # Smaller frames for CDN compatibility
+
+# Heartbeat
+[heartbeat]
+enabled = true
+interval = 25         # Slightly longer for CDN
+timeout = 50
+
+# Performance (tuned for CDN)
+[performance]
+nodelay = true
+keepalive = 30
+buffer_profile = "balanced"
+
+# Anti-DPI (minimal needed with CDN)
+[anti_dpi]
+enabled = true
+utls_fingerprint = "chrome"
+fragment = false      # CDN handles TLS
+padding = true
+padding_size = "16-64"
+traffic_shape = false
+
+# Port Forwarding
+[[forwards]]
+name = "socks5-proxy"
+type = "socks5"
+listen = "127.0.0.1:1080"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Multi-Path with CDN Fallback
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Uncomment to use multi-path:
+#  - Primary: Direct REALITY connection (fastest)
+#  - Fallback: CDN WebSocket (most reliable)
+#
+# [[paths]]
+# name = "direct"
+# remote_addr = "server-ip:443"
+# transport = "reality"
+# priority = 1
+#
+# [[paths]]
+# name = "cdn-fallback"
+# remote_addr = "your-domain.com:443"
+# transport = "wsmux"
+# priority = 2

@@ -1,0 +1,24 @@
+# Binaries
+ipshadowt
+ipshadowt-*
+*.exe
+
+# Build
+/build/
+/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+/vendor/
+
+# Config with secrets
+*.local.toml

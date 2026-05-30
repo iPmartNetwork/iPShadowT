@@ -1,0 +1,97 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  iPShadowT - Client Configuration
+#  Anti-DPI Multi-Transport Tunnel
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# General Settings
+mode = "client"
+log_level = "info"              # debug, info, warn, error
+transport = "tcpmux"            # tcpmux, wsmux, reality, h2mux, shadowtls
+remote_addr = "your-server.com:443"  # Server address
+password = "your-secret-password-here"  # Must match server (CHANGE THIS!)
+
+# TLS (optional)
+# tls_cert = "/etc/ipshadowt/cert.pem"
+# tls_key = "/etc/ipshadowt/key.pem"
+
+# Multiplexing
+[mux]
+enabled = true
+concurrency = 4             # Number of mux sessions to server
+frame_size = 32768          # Max frame size (32KB)
+recv_buffer = 4194304       # Receive buffer (4MB)
+stream_buffer = 2097152     # Stream buffer (2MB)
+max_streams = 1024          # Max streams per session
+
+# Heartbeat / Keepalive
+[heartbeat]
+enabled = true
+interval = 20               # Heartbeat interval (seconds)
+timeout = 40                # Heartbeat timeout (seconds)
+
+# Performance Tuning
+[performance]
+nodelay = true
+keepalive = 15
+buffer_profile = "balanced"
+workers = 4
+kernel_tuning = true
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Port Forwarding Rules
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# SOCKS5 Proxy (for browsers and apps)
+[[forwards]]
+name = "socks5-proxy"
+type = "socks5"
+listen = "127.0.0.1:1080"
+remote = ""                 # Dynamic (determined by SOCKS5 request)
+
+# HTTP Proxy
+# [[forwards]]
+# name = "http-proxy"
+# type = "http"
+# listen = "127.0.0.1:8080"
+# remote = ""
+
+# TCP Port Forward (example: forward local 8443 to remote 443)
+# [[forwards]]
+# name = "web-forward"
+# type = "tcp"
+# listen = "0.0.0.0:8443"
+# remote = "example.com:443"
+
+# TCP Port Forward (example: SSH)
+# [[forwards]]
+# name = "ssh-forward"
+# type = "tcp"
+# listen = "127.0.0.1:2222"
+# remote = "192.168.1.1:22"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Anti-DPI Settings (Phase 2)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [anti_dpi]
+# enabled = true
+# utls_fingerprint = "chrome"   # chrome, firefox, safari, random
+# fragment = true               # TLS record fragmentation
+# fragment_size = "50-100"      # Fragment size range (bytes)
+# padding = true                # Random padding
+# padding_size = "16-256"       # Padding size range (bytes)
+# traffic_shape = false         # Traffic shaping (slower but stealthier)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Multi-Path (Phase 4)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [[paths]]
+# name = "direct-reality"
+# remote_addr = "server1.com:443"
+# transport = "reality"
+# priority = 1
+#
+# [[paths]]
+# name = "cdn-websocket"
+# remote_addr = "cdn-domain.com:443"
+# transport = "wsmux"
+# priority = 2

@@ -1,0 +1,41 @@
+[Unit]
+Description=iPShadowT - Anti-DPI Multi-Transport Tunnel
+Documentation=https://github.com/iPmart/iPShadowT
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Configuration
+ExecStart=/usr/local/bin/ipshadowt -c /etc/ipshadowt/config.toml
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/etc/ipshadowt
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=65535
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ipshadowt
+
+# Environment
+Environment=GOMAXPROCS=0
+
+[Install]
+WantedBy=multi-user.target

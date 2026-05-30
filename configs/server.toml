@@ -1,0 +1,46 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  iPShadowT - Server Configuration
+#  Anti-DPI Multi-Transport Tunnel
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# General Settings
+mode = "server"
+log_level = "info"          # debug, info, warn, error
+transport = "tcpmux"        # tcpmux, wsmux, reality, h2mux, shadowtls
+bind_addr = "0.0.0.0:443"  # Listen address
+password = "your-secret-password-here"  # Pre-shared key (CHANGE THIS!)
+
+# TLS (optional - recommended for production)
+# tls_cert = "/etc/ipshadowt/cert.pem"
+# tls_key = "/etc/ipshadowt/key.pem"
+
+# Multiplexing
+[mux]
+enabled = true
+concurrency = 8             # Number of mux sessions to accept
+frame_size = 32768          # Max frame size (32KB)
+recv_buffer = 4194304       # Receive buffer (4MB)
+stream_buffer = 2097152     # Stream buffer (2MB)
+max_streams = 1024          # Max streams per session
+
+# Connection Pool
+[pool]
+size = 16                   # Pool size
+max_idle = 8                # Max idle connections
+idle_timeout = 90           # Idle timeout (seconds)
+
+# Heartbeat / Keepalive
+[heartbeat]
+enabled = true
+interval = 20               # Heartbeat interval (seconds)
+timeout = 40                # Heartbeat timeout (seconds)
+
+# Performance Tuning
+[performance]
+nodelay = true              # TCP_NODELAY
+keepalive = 15              # TCP keepalive (seconds)
+send_buffer = 4194304       # SO_SNDBUF (4MB)
+recv_buffer = 4194304       # SO_RCVBUF (4MB)
+buffer_profile = "balanced" # low_cpu, balanced, high_throughput
+workers = 4                 # Worker goroutines
+kernel_tuning = true        # Auto-tune kernel params (Linux only)
