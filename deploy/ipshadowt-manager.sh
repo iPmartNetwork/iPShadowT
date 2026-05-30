@@ -424,6 +424,34 @@ add_port_forward() {
     echo -e "  ${D}Forward a port from this server through the tunnel to the remote server${N}"
     echo ""
 
+    # List available tunnels and let user choose
+    echo -e "  ${W}Select tunnel:${N}"
+    local configs=()
+    local i=1
+    for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
+        [ -f "$conf" ] || continue
+        local name=$(basename "$conf" .toml)
+        local remote=$(grep -E '^remote_addr' "$conf" 2>/dev/null | cut -d'"' -f2)
+        echo -e "    ${C}${i})${N} ${name} ${D}(${remote})${N}"
+        configs+=("$conf")
+        i=$((i+1))
+    done
+
+    if [ ${#configs[@]} -eq 0 ]; then
+        msg_err "No tunnels configured"
+        return
+    fi
+
+    echo ""
+    msg_ask "Choice [1]: "; read -r tchoice
+    tchoice=${tchoice:-1}
+    local target_conf="${configs[$((tchoice-1))]}"
+
+    if [ -z "$target_conf" ] || [ ! -f "$target_conf" ]; then
+        msg_err "Invalid choice"
+        return
+    fi
+
     msg_ask "Name (e.g. vless, ssh, web): "; read -r fname
     [ -z "$fname" ] && return
 
@@ -440,26 +468,29 @@ add_port_forward() {
     msg_ask "Remote port (on FOREIGN server): "; read -r rport
     [ -z "$rport" ] && return
 
-    # Append to config
-    echo "" >> "${CONFIG_DIR}/config.toml"
-    echo "[[forwards]]" >> "${CONFIG_DIR}/config.toml"
-    echo "name = \"${fname}\"" >> "${CONFIG_DIR}/config.toml"
-    echo "type = \"${ftype}\"" >> "${CONFIG_DIR}/config.toml"
-    echo "listen = \"0.0.0.0:${lport}\"" >> "${CONFIG_DIR}/config.toml"
-    echo "remote = \"${rport}\"" >> "${CONFIG_DIR}/config.toml"
+    # Append to selected config
+    echo "" >> "$target_conf"
+    echo "[[forwards]]" >> "$target_conf"
+    echo "name = \"${fname}\"" >> "$target_conf"
+    echo "type = \"${ftype}\"" >> "$target_conf"
+    echo "listen = \"0.0.0.0:${lport}\"" >> "$target_conf"
+    echo "remote = \"${rport}\"" >> "$target_conf"
+
+    # Determine service name
+    local svc_name="${SERVICE_NAME}"
+    local conf_name=$(basename "$target_conf" .toml)
+    [ "$conf_name" != "config" ] && svc_name="${SERVICE_NAME}-${conf_name#tunnel-}"
 
     echo ""
-    msg_ok "Port forward added: ${ftype} :${lport} -> remote:${rport}"
-    msg_warn "Restart service to apply: systemctl restart ipshadowt"
-    echo ""
-    msg_ask "Restart now? [Y/n]: "; read -r ans
+    msg_ok "Port forward added to ${conf_name}: ${ftype} :${lport} -> remote:${rport}"
+    msg_ask "Restart ${svc_name} now? [Y/n]: "; read -r ans
     if [[ "${ans:-y}" == "y" ]]; then
-        systemctl restart ${SERVICE_NAME}
+        systemctl restart "$svc_name"
         sleep 2
         if ss -tuln | grep -q ":${lport} "; then
             msg_ok "Port ${lport} is now listening!"
         else
-            msg_err "Port ${lport} not listening. Check logs: journalctl -u ipshadowt -n 5"
+            msg_err "Port ${lport} not listening. Check: journalctl -u ${svc_name} -n 5"
         fi
     fi
 }
