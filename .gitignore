@@ -1,6 +1,8 @@
 # Binaries
-ipshadowt
-ipshadowt-*
+/ipshadowt
+/ipshadowt-linux-*
+/ipshadowt-windows-*
+/ipshadowt-darwin-*
 *.exe
 
 # Build
