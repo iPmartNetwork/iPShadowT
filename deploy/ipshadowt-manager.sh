@@ -500,20 +500,47 @@ do_service() {
     print_banner
     echo -e "  ${W}[ SERVICE CONTROL ]${N}"
     echo ""
-    echo -e "  ${C}1)${N} Start"
-    echo -e "  ${C}2)${N} Stop"
-    echo -e "  ${C}3)${N} Restart"
-    echo -e "  ${C}4)${N} Enable (auto-start on boot)"
-    echo -e "  ${C}5)${N} Disable"
+
+    # List all services
+    echo -e "  ${W}Active tunnels:${N}"
+    local svcs=()
+    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+        local st="${R}OFF${N}"; systemctl is-active --quiet "$svc" 2>/dev/null && st="${G}ON ${N}"
+        echo -e "    [${st}] ${svc}"
+        svcs+=("$svc")
+    done
+    [ ${#svcs[@]} -eq 0 ] && msg_warn "No iPShadowT services found"
+
+    echo ""
+    echo -e "  ${C}1)${N} Start ALL tunnels"
+    echo -e "  ${C}2)${N} Stop ALL tunnels"
+    echo -e "  ${C}3)${N} Restart ALL tunnels"
+    echo -e "  ${C}4)${N} Start specific tunnel"
+    echo -e "  ${C}5)${N} Stop specific tunnel"
+    echo -e "  ${C}6)${N} Restart specific tunnel"
+    echo -e "  ${C}7)${N} Enable ALL (start on boot)"
+    echo -e "  ${C}8)${N} Disable ALL"
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r c
     case $c in
-        1) systemctl start ${SERVICE_NAME} && msg_ok "Started" || msg_err "Failed" ;;
-        2) systemctl stop ${SERVICE_NAME} && msg_ok "Stopped" || msg_err "Failed" ;;
-        3) systemctl restart ${SERVICE_NAME} && msg_ok "Restarted" || msg_err "Failed" ;;
-        4) systemctl enable ${SERVICE_NAME} >/dev/null 2>&1 && msg_ok "Enabled" ;;
-        5) systemctl disable ${SERVICE_NAME} >/dev/null 2>&1 && msg_ok "Disabled" ;;
+        1) for svc in "${svcs[@]}"; do systemctl start "$svc" 2>/dev/null && msg_ok "Started: $svc"; done ;;
+        2) for svc in "${svcs[@]}"; do systemctl stop "$svc" 2>/dev/null && msg_ok "Stopped: $svc"; done ;;
+        3) for svc in "${svcs[@]}"; do systemctl restart "$svc" 2>/dev/null && msg_ok "Restarted: $svc"; done ;;
+        4)
+            msg_ask "Service name (e.g. ipshadowt, ipshadowt-DE): "; read -r sn
+            systemctl start "$sn" && msg_ok "Started: $sn" || msg_err "Failed"
+            ;;
+        5)
+            msg_ask "Service name: "; read -r sn
+            systemctl stop "$sn" && msg_ok "Stopped: $sn" || msg_err "Failed"
+            ;;
+        6)
+            msg_ask "Service name: "; read -r sn
+            systemctl restart "$sn" && msg_ok "Restarted: $sn" || msg_err "Failed"
+            ;;
+        7) for svc in "${svcs[@]}"; do systemctl enable "$svc" >/dev/null 2>&1 && msg_ok "Enabled: $svc"; done ;;
+        8) for svc in "${svcs[@]}"; do systemctl disable "$svc" >/dev/null 2>&1 && msg_ok "Disabled: $svc"; done ;;
         0) return ;;
     esac
     press_enter
@@ -669,23 +696,225 @@ do_multi() {
     print_banner
     echo -e "  ${W}[ MULTI-TUNNEL MANAGER ]${N}"
     echo ""
-    echo -e "  ${D}Run multiple tunnels to different servers simultaneously${N}"
+    echo -e "  ${D}Manage multiple tunnels to different servers${N}"
     echo ""
     echo -e "  ${C}1)${N} List all tunnels"
-    echo -e "  ${C}2)${N} Add new tunnel"
-    echo -e "  ${C}3)${N} Remove tunnel"
-    echo -e "  ${C}4)${N} Restart all tunnels"
+    echo -e "  ${C}2)${N} Add tunnel: Multiple Foreign -> This Iran Server"
+    echo -e "  ${C}3)${N} Add tunnel: This Foreign -> Multiple Iran Servers"
+    echo -e "  ${C}4)${N} Remove tunnel"
+    echo -e "  ${C}5)${N} Restart all tunnels"
+    echo -e "  ${C}6)${N} Stop all tunnels"
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r c
     case $c in
         1) list_tunnels ;;
-        2) add_tunnel ;;
-        3) remove_tunnel ;;
-        4) restart_all_tunnels ;;
+        2) add_client_tunnel ;;
+        3) add_server_tunnel ;;
+        4) remove_tunnel ;;
+        5) restart_all_tunnels ;;
+        6) stop_all_tunnels ;;
         0) return ;;
     esac
     press_enter
+}
+
+# Add client tunnel (Iran connects to a foreign server)
+add_client_tunnel() {
+    echo ""
+    print_line
+    echo -e "  ${W}ADD CLIENT TUNNEL (Iran -> Foreign)${N}"
+    print_line
+    echo ""
+
+    msg_ask "Tunnel name (e.g. DE, TR, US): "; read -r tname
+    [ -z "$tname" ] && return
+    tname=$(echo "$tname" | tr -cd 'a-zA-Z0-9_-')
+
+    msg_ask "Foreign server IP: "; read -r ip
+    [ -z "$ip" ] && return
+
+    msg_ask "Tunnel port (on foreign server): "; read -r port
+    [ -z "$port" ] && return
+
+    msg_ask "Password: "; read -r pass
+    [ -z "$pass" ] && pass=$(gen_pass)
+
+    echo ""
+    echo -e "  ${C}1)${N}reality ${C}2)${N}kcp ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}shadowtls"
+    msg_ask "Transport [4]: "; read -r tc
+    local transport="tcpmux"
+    case $tc in 1) transport="reality";; 2) transport="kcp";; 3) transport="wsmux";; 5) transport="shadowtls";; esac
+
+    local count=$(ls ${CONFIG_DIR}/tunnel-*.toml 2>/dev/null | wc -l)
+    local sp=$((1080 + count + 1))
+    msg_ask "SOCKS5 port [${sp}]: "; read -r usp
+    sp=${usp:-$sp}
+
+    # Ask for port forwards
+    echo ""
+    msg_ask "Add port forwards? [y/N]: "; read -r add_fwd
+    local forwards=""
+    while [[ "$add_fwd" == "y" ]]; do
+        msg_ask "  Forward name: "; read -r fname
+        msg_ask "  Listen port (on this server): "; read -r lport
+        msg_ask "  Remote port (on foreign): "; read -r rport
+        msg_ask "  Protocol (tcp/udp) [tcp]: "; read -r fproto
+        fproto=${fproto:-tcp}
+        forwards="${forwards}
+[[forwards]]
+name = \"${fname}\"
+type = \"${fproto}\"
+listen = \"0.0.0.0:${lport}\"
+remote = \"${rport}\"
+"
+        msg_ask "Add another forward? [y/N]: "; read -r add_fwd
+    done
+
+    local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
+    mkdir -p "${CONFIG_DIR}"
+    cat > "$cf" << EOF
+# iPShadowT Client Tunnel - ${tname}
+# Remote: ${ip}:${port}
+mode = "client"
+log_level = "info"
+transport = "${transport}"
+remote_addr = "${ip}:${port}"
+password = "${pass}"
+
+[mux]
+concurrency = 4
+frame_size = 32768
+
+[heartbeat]
+enabled = true
+interval = 20
+timeout = 40
+
+[performance]
+nodelay = true
+keepalive = 15
+
+[[forwards]]
+name = "socks5-${tname}"
+type = "socks5"
+listen = "0.0.0.0:${sp}"
+${forwards}
+EOF
+
+    local svc="${SERVICE_NAME}-${tname}"
+    cat > "/etc/systemd/system/${svc}.service" << EOF
+[Unit]
+Description=iPShadowT - ${tname} (${ip}:${port})
+After=network.target
+[Service]
+Type=simple
+ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${cf}
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable "$svc" >/dev/null 2>&1
+    systemctl start "$svc"
+    sleep 3
+
+    if systemctl is-active --quiet "$svc"; then
+        msg_ok "Tunnel '${tname}' active! (SOCKS5 :${sp})"
+    else
+        msg_err "Failed. Check: journalctl -u ${svc} -n 5"
+    fi
+}
+
+# Add server tunnel (Foreign listens for Iran connections)
+add_server_tunnel() {
+    echo ""
+    print_line
+    echo -e "  ${W}ADD SERVER TUNNEL (Foreign listens for Iran)${N}"
+    print_line
+    echo ""
+
+    msg_ask "Tunnel name (e.g. iran1, iran2): "; read -r tname
+    [ -z "$tname" ] && return
+    tname=$(echo "$tname" | tr -cd 'a-zA-Z0-9_-')
+
+    msg_ask "Listen port: "; read -r port
+    [ -z "$port" ] && return
+
+    msg_ask "Password: "; read -r pass
+    [ -z "$pass" ] && pass=$(gen_pass)
+
+    echo ""
+    echo -e "  ${C}1)${N}reality ${C}2)${N}kcp ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}shadowtls"
+    msg_ask "Transport [4]: "; read -r tc
+    local transport="tcpmux"
+    case $tc in 1) transport="reality";; 2) transport="kcp";; 3) transport="wsmux";; 5) transport="shadowtls";; esac
+
+    local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
+    mkdir -p "${CONFIG_DIR}"
+    cat > "$cf" << EOF
+# iPShadowT Server Tunnel - ${tname}
+# Listens on port ${port}
+mode = "server"
+log_level = "info"
+transport = "${transport}"
+bind_addr = "0.0.0.0:${port}"
+password = "${pass}"
+
+[mux]
+concurrency = 8
+frame_size = 32768
+
+[heartbeat]
+enabled = true
+interval = 20
+timeout = 40
+
+[performance]
+nodelay = true
+keepalive = 15
+buffer_profile = "high_throughput"
+EOF
+
+    local svc="${SERVICE_NAME}-${tname}"
+    cat > "/etc/systemd/system/${svc}.service" << EOF
+[Unit]
+Description=iPShadowT Server - ${tname} (:${port})
+After=network.target
+[Service]
+Type=simple
+ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${cf}
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable "$svc" >/dev/null 2>&1
+    systemctl start "$svc"
+    sleep 2
+
+    if systemctl is-active --quiet "$svc"; then
+        local server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
+        msg_ok "Server tunnel '${tname}' active on port ${port}!"
+        echo ""
+        echo -e "  ${W}Give to Iran client:${N}"
+        echo -e "    IP: ${server_ip}"
+        echo -e "    Port: ${port}"
+        echo -e "    Password: ${pass}"
+        echo -e "    Transport: ${transport}"
+    else
+        msg_err "Failed. Check: journalctl -u ${svc} -n 5"
+    fi
+}
+
+stop_all_tunnels() {
+    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+        systemctl stop "$svc" 2>/dev/null && msg_ok "Stopped: $svc"
+    done
 }
 
 list_tunnels() {
@@ -707,67 +936,6 @@ list_tunnels() {
     print_line
 }
 
-add_tunnel() {
-    msg_ask "Tunnel name (e.g. server2): "; read -r tname
-    [ -z "$tname" ] && return
-    tname=$(echo "$tname" | tr -cd 'a-zA-Z0-9_-')
-
-    msg_ask "Remote server IP: "; read -r ip
-    msg_ask "Port [443]: "; read -r port; port=${port:-443}
-    msg_ask "Password: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
-
-    echo -e "  ${C}1)${N}reality ${C}2)${N}kcp ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}shadowtls"
-    msg_ask "Transport [1]: "; read -r tc
-    local transport="reality"
-    case $tc in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="tcpmux";; 5) transport="shadowtls";; esac
-
-    local count=$(ls ${CONFIG_DIR}/tunnel-*.toml 2>/dev/null | wc -l)
-    local sp=$((1080 + count))
-    msg_ask "SOCKS5 port [${sp}]: "; read -r usp; sp=${usp:-$sp}
-
-    local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
-    cat > "$cf" << EOF
-mode = "client"
-transport = "${transport}"
-remote_addr = "${ip}:${port}"
-password = "${pass}"
-[mux]
-concurrency = 4
-[anti_dpi]
-enabled = true
-utls_fingerprint = "chrome"
-fragment = true
-[heartbeat]
-enabled = true
-interval = 20
-timeout = 40
-[[forwards]]
-name = "socks5-${tname}"
-type = "socks5"
-listen = "0.0.0.0:${sp}"
-EOF
-
-    local svc="${SERVICE_NAME}-${tname}"
-    cat > "/etc/systemd/system/${svc}.service" << EOF
-[Unit]
-Description=iPShadowT - ${tname}
-After=network.target
-[Service]
-Type=simple
-ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${cf}
-Restart=always
-RestartSec=5
-LimitNOFILE=65535
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl daemon-reload
-    systemctl enable "$svc" >/dev/null 2>&1
-    systemctl start "$svc"
-    sleep 2
-    systemctl is-active --quiet "$svc" && msg_ok "Tunnel '${tname}' active (SOCKS5 :${sp})" || msg_err "Failed"
-}
-
 remove_tunnel() {
     list_tunnels
     msg_ask "Tunnel name to remove: "; read -r tname
@@ -779,16 +947,6 @@ remove_tunnel() {
     rm -f "${CONFIG_DIR}/tunnel-${tname}.toml"
     systemctl daemon-reload
     msg_ok "Tunnel '${tname}' removed"
-}
-
-restart_all_tunnels() {
-    for conf in ${CONFIG_DIR}/tunnel-*.toml ${CONFIG_DIR}/config.toml; do
-        [ -f "$conf" ] || continue
-        local name=$(basename "$conf" .toml)
-        local svc="${SERVICE_NAME}"
-        [ "$name" != "config" ] && svc="${SERVICE_NAME}-${name#tunnel-}"
-        systemctl restart "$svc" 2>/dev/null && msg_ok "Restarted: $svc"
-    done
 }
 
 # ─── Update ───────────────────────────────────────
