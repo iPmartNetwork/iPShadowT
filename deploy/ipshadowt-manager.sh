@@ -936,14 +936,14 @@ add_client_tunnel() {
     msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
     echo ""
-    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}kcp ${C}6)${N}quic ${C}7)${N}cdn"
+    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic ${C}9)${N}cdn"
     msg_ask "Transport [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="tcpmux";; 5) transport="kcp";; 6) transport="quic";; 7) transport="wsmux";; esac
+    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="h2mux";; 5) transport="grpc";; 6) transport="tcpmux";; 7) transport="kcp";; 8) transport="quic";; 9) transport="wsmux";; esac
 
     # CDN
     local cdn_section=""
-    if [ "$tc" = "7" ]; then
+    if [ "$tc" = "9" ]; then
         msg_ask "CDN domain: "; read -r cdn_domain
         [ -z "$cdn_domain" ] && { msg_err "Required"; return; }
         ip="$cdn_domain"; port="443"
@@ -954,6 +954,32 @@ provider = \"cloudflare\"
 domain = \"${cdn_domain}\"
 path = \"/tunnel\"
 tls = true"
+    fi
+
+    # TLS for tcpmux
+    local tls_section=""
+    if [ "$transport" = "tcpmux" ] && [ "$tc" != "9" ]; then
+        msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
+        if [[ "$tls_ans" =~ ^[Yy]$ ]]; then
+            msg_ask "Cert [/etc/ipshadowt/cert.pem]: "; read -r tc_path
+            msg_ask "Key [/etc/ipshadowt/key.pem]: "; read -r tk_path
+            tls_section="tls_cert = \"${tc_path:-/etc/ipshadowt/cert.pem}\"
+tls_key = \"${tk_path:-/etc/ipshadowt/key.pem}\""
+        fi
+    fi
+
+    # REALITY for client
+    local reality_section=""
+    if [ "$transport" = "reality" ]; then
+        echo ""
+        msg_ask "SNI [www.google.com]: "; read -r sni; sni=${sni:-www.google.com}
+        msg_ask "Public key (from server): "; read -r pub_key
+        msg_ask "Short ID (from server): "; read -r short_id
+        reality_section="
+[reality]
+server_name = \"${sni}\"
+public_key = \"${pub_key}\"
+short_id = \"${short_id}\""
     fi
 
     # SOCKS5 port auto-detect
@@ -986,6 +1012,7 @@ log_level = "info"
 transport = "${transport}"
 remote_addr = "${ip}:${port}"
 password = "${pass}"
+${tls_section}
 
 [mux]
 concurrency = 4
@@ -1000,6 +1027,7 @@ timeout = 40
 nodelay = true
 keepalive = 15
 ${cdn_section}
+${reality_section}
 
 [health]
 enabled = true
@@ -1044,10 +1072,50 @@ add_server_tunnel() {
     msg_ask "Listen port: "; read -r port; [ -z "$port" ] && return
     msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
-    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}kcp ${C}6)${N}quic"
+    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic"
     msg_ask "Transport [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="tcpmux";; 5) transport="kcp";; 6) transport="quic";; esac
+    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="h2mux";; 5) transport="grpc";; 6) transport="tcpmux";; 7) transport="kcp";; 8) transport="quic";; esac
+
+    # TLS for tcpmux
+    local tls_section=""
+    if [ "$transport" = "tcpmux" ]; then
+        msg_ask "Enable TLS? [y/N]: "; read -r tls_ans
+        if [[ "$tls_ans" =~ ^[Yy]$ ]]; then
+            msg_ask "Cert [/etc/ipshadowt/cert.pem]: "; read -r tc_path
+            msg_ask "Key [/etc/ipshadowt/key.pem]: "; read -r tk_path
+            tls_section="tls_cert = \"${tc_path:-/etc/ipshadowt/cert.pem}\"
+tls_key = \"${tk_path:-/etc/ipshadowt/key.pem}\""
+        fi
+    fi
+
+    # REALITY for server
+    local reality_section=""
+    if [ "$transport" = "reality" ]; then
+        echo ""
+        msg_ask "SNI [www.google.com]: "; read -r sni; sni=${sni:-www.google.com}
+        msg_ask "Fallback dest [www.google.com:443]: "; read -r dest; dest=${dest:-www.google.com:443}
+        if is_installed; then
+            msg_info "Generating REALITY keys..."
+            local keys=$(${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys 2>/dev/null)
+            local priv_key=$(echo "$keys" | grep -i "private" | awk '{print $NF}')
+            local pub_key=$(echo "$keys" | grep -i "public" | awk '{print $NF}')
+            local short_id=$(echo "$keys" | grep -i "short" | awk '{print $NF}')
+            [ -z "$short_id" ] && short_id=$(openssl rand -hex 4)
+            [ -z "$priv_key" ] && { msg_ask "Private key: "; read -r priv_key; }
+            [ -z "$pub_key" ] && { msg_ask "Public key: "; read -r pub_key; }
+        else
+            msg_ask "Private key: "; read -r priv_key
+            msg_ask "Public key: "; read -r pub_key
+            short_id=$(openssl rand -hex 4 2>/dev/null || echo "abcd1234")
+        fi
+        reality_section="
+[reality]
+server_name = \"${sni}\"
+private_key = \"${priv_key}\"
+short_id = \"${short_id}\"
+dest = \"${dest}\""
+    fi
 
     local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
     cat > "$cf" << EOF
@@ -1057,6 +1125,7 @@ log_level = "info"
 transport = "${transport}"
 bind_addr = "0.0.0.0:${port}"
 password = "${pass}"
+${tls_section}
 
 [mux]
 concurrency = 8
@@ -1075,6 +1144,7 @@ buffer_profile = "high_throughput"
 [health]
 enabled = true
 listen = "127.0.0.1:0"
+${reality_section}
 EOF
 
     local svc="${SERVICE_NAME}-${tname}"
@@ -1100,6 +1170,10 @@ EOF
         local sip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
         msg_ok "Server tunnel '${tname}' active on :${port}"
         echo -e "  ${D}Share: IP=${sip} Port=${port} Pass=${pass} Transport=${transport}${N}"
+        if [ -n "$pub_key" ]; then
+            echo -e "  ${D}REALITY Public Key: ${pub_key}${N}"
+            echo -e "  ${D}REALITY Short ID: ${short_id}${N}"
+        fi
     else
         msg_err "Failed — journalctl -u ${svc} -n 5"
     fi
