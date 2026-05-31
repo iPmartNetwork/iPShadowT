@@ -8,10 +8,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v1.0.0-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.0.0-blue?style=flat-square" alt="Version"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
-  <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform"/></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows%20%7C%20freebsd-lightgrey?style=flat-square" alt="Platform"/></a>
 </p>
 
 <p align="center">
@@ -35,9 +35,26 @@
 
 ## 📋 Overview
 
-iPShadowT is a high-performance, self-contained tunnel engine designed to bypass deep packet inspection (DPI) and internet censorship. It combines 8 transport protocols, 15 stealth techniques, and intelligent auto-selection into a single Go binary with zero external dependencies.
+iPShadowT is a high-performance, self-contained tunnel engine designed to bypass deep packet inspection (DPI) and internet censorship. It combines 9 transport protocols, 15 stealth techniques, and intelligent auto-selection into a single Go binary with zero external dependencies.
 
 Built to survive even the most extreme filtering scenarios — including complete internet shutdowns where only DNS traffic is allowed.
+
+### 🆕 What's New in v2.0.0
+
+- ⚡ **Full QUIC transport** (quic-go, 0-RTT, connection migration)
+- 🔀 **Auto-Failover** with multi-path (priority/round-robin/latency)
+- 🎭 **Traffic Obfuscation** (4 modes: HTTPS mimic, Video, Burst, Constant)
+- 🔒 **DNS Leak Protection** (automatic DoH)
+- ☁️ **CDN Mode** (Cloudflare/Gcore/Arvan — IP hidden)
+- 🧩 **Plugin System** (Transport/Auth/Filter plugins)
+- 📈 **Real-time Dashboard** (WebSocket + live charts)
+- 📡 **Prometheus + Grafana** monitoring stack
+- 🌐 **Cluster Mode** (multi-server with geo-routing)
+- 🗺️ **Split Tunneling** (Iran IP bypass, 200+ CIDRs)
+- ♻️ **Graceful Upgrade** (zero-downtime binary updates)
+- ⚖️ **Per-user Rate Limiting** + Security Manager
+- 🔄 **Config Sync** (encrypted push/pull between servers)
+- 📜 **ACME/Auto-Cert** (automatic TLS certificate management)
 
 ---
 
@@ -72,11 +89,13 @@ curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/depl
 
 | Feature | Description |
 |---------|-------------|
-| 8 Transports | TCP, WebSocket, HTTP/2, gRPC, REALITY, ShadowTLS, QUIC, KCP, Reverse |
+| 9 Transports | TCP, WebSocket, HTTP/2, gRPC, REALITY, ShadowTLS, QUIC, KCP, Reverse |
 | 15 Stealth Techniques | uTLS, Fragment, ECH, Shaping, Domain Fronting, DNS Tunnel, and more |
+| Traffic Obfuscation | 4 modes: HTTPS mimic, Video streaming, Random burst, Constant rate |
 | Multiplexing | Thousands of streams over a single connection (smux) |
-| Multi-Path | Automatic failover across multiple paths |
+| Multi-Path + Failover | Automatic failover with priority/round-robin/latency strategies |
 | Encryption | XChaCha20-Poly1305 AEAD |
+| Plugin System | Extensible Transport, Auth, and Filter plugins |
 | Zero Dependencies | Single static binary, no external tools needed |
 
 ### 🛡️ Anti-DPI
@@ -99,24 +118,31 @@ curl -fsSL https://raw.githubusercontent.com/iPmartNetwork/iPShadowT/master/depl
 | Feature | Description |
 |---------|-------------|
 | Port Forwarding | TCP, UDP, SOCKS5, HTTP proxy |
-| Split Tunneling | Iran IPs go direct, rest through tunnel |
+| Split Tunneling | Iran IPs go direct, rest through tunnel (200+ CIDRs) |
 | Load Balancer | 5 strategies (round-robin, least-conn, weighted, IP-hash, fastest) |
-| CDN Support | Cloudflare, Fastly, Arvan, custom |
-| DNS over HTTPS | Bypass DNS poisoning |
+| CDN Support | Cloudflare, Gcore, Arvan, custom |
+| DNS over HTTPS | Automatic DoH — prevents DNS poisoning & leaks |
 | TUN/TAP | Full system traffic capture (Layer 2 & 3) |
+| Adaptive Pool | Auto-scaling connection pool with warmup |
+| Cluster Mode | Multi-server with geographic routing & state sync |
+| Config Sync | Encrypted config push/pull between nodes |
 
 ### 🔧 Management
 
 | Feature | Description |
 |---------|-------------|
-| Web Panel | Built-in dashboard with real-time stats |
-| REST API | Full management API for external tools |
-| User Management | Multi-user with traffic limits and expiry |
+| Real-time Dashboard | WebSocket-based with live traffic charts |
+| REST API | Full management API with CORS & API key auth |
+| User Management | Multi-user with traffic limits, expiry, enable/disable |
 | Subscription Links | V2RayNG/Clash compatible |
-| Prometheus Metrics | Grafana-ready monitoring |
+| Prometheus Metrics | Grafana-ready monitoring with alert rules |
+| Rate Limiting | Per-user/IP bandwidth control |
+| Security Manager | IP blacklist/whitelist, brute-force protection, audit log |
+| ACME/Auto-Cert | Automatic TLS certificate management & renewal |
 | Auto-Update | Self-update from GitHub releases |
-| Backup/Restore | Automatic periodic backups |
+| Backup/Restore | Automatic periodic backups (cron) |
 | Hot-Reload | Change config without restart |
+| Graceful Upgrade | Zero-downtime binary updates |
 
 ### 🧠 Intelligence
 
@@ -196,23 +222,34 @@ listen = "127.0.0.1:1080"
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  iPShadowT                      │
-├─────────────────────────────────────────────────┤
-│  Input: SOCKS5 / HTTP / TCP / UDP / TUN         │
-│  ↓                                              │
-│  Split Tunnel (Iran direct, rest proxy)         │
-│  ↓                                              │
-│  Multiplexer (smux - 1000s of streams)          │
-│  ↓                                              │
-│  Encryption (XChaCha20-Poly1305 + Padding)      │
-│  ↓                                              │
-│  Anti-DPI (uTLS + Fragment + Shaping + ECH)     │
-│  ↓                                              │
-│  Transport (REALITY / WS / H2 / gRPC / ...)    │
-│  ↓                                              │
-│  Multi-Path (auto-failover between paths)       │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    iPShadowT v2.0                    │
+├─────────────────────────────────────────────────────┤
+│  Input: SOCKS5 / HTTP / TCP / UDP / TUN             │
+│  ↓                                                  │
+│  Split Tunnel (Iran direct, rest proxy)             │
+│  ↓                                                  │
+│  Multiplexer (smux - 1000s of streams)              │
+│  ↓                                                  │
+│  Encryption (XChaCha20-Poly1305 + Padding)          │
+│  ↓                                                  │
+│  Obfuscation (HTTPS mimic / Video / Burst)          │
+│  ↓                                                  │
+│  Anti-DPI (uTLS + Fragment + Shaping + ECH)         │
+│  ↓                                                  │
+│  Transport (REALITY / WS / H2 / gRPC / QUIC / ...) │
+│  ↓                                                  │
+│  Multi-Path + Auto-Failover (priority/latency)      │
+│  ↓                                                  │
+│  DNS-over-HTTPS (leak protection)                   │
+└─────────────────────────────────────────────────────┘
+
+Server Side:
+┌─────────────────────────────────────────────────────┐
+│  Security (IP check) → Rate Limit → Plugin Filters  │
+│  → Mux Session → Stream → Destination              │
+│  → Metrics + Health + Prometheus + Dashboard        │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -233,8 +270,22 @@ make build-all          # All platforms
 ## 🐳 Docker
 
 ```bash
+# Build locally
 docker build -t ipshadowt .
-docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 ipshadowt
+docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 -p 443:443/udp ipshadowt
+
+# Or pull from GHCR
+docker pull ghcr.io/ipmartnetwork/ipshadowt:2.0.0
+docker run -v ./config.toml:/etc/ipshadowt/config.toml ghcr.io/ipmartnetwork/ipshadowt:2.0.0
+```
+
+### Monitoring Stack (Prometheus + Grafana)
+
+```bash
+cd deploy/
+docker-compose -f docker-compose.monitoring.yml up -d
+# Grafana: http://localhost:3000 (admin/admin)
+# Prometheus: http://localhost:9090
 ```
 
 ---
@@ -251,16 +302,18 @@ Features:
 - 🚀 One-click install (auto-download binary + prerequisites)
 - ⚙️ Interactive tunnel setup wizard (Iran/Foreign)
 - 🔀 Multi-Tunnel: one-to-many, many-to-one, one-to-one
-- 🧪 Auto-detect best transport for your network
-- 🔑 REALITY key generation
-- 📊 Live status, logs, speed test, system info
-- 🌐 Network diagnostics (DPI detection, port check, BBR)
-- 🐕 Connection watchdog (auto-restart on failure)
-- 🔥 Automatic firewall configuration
+- ☁️ CDN mode setup (Cloudflare, Gcore, Arvan)
+- 🔒 TLS option for tcpmux transport
+- 🧪 Smart transport detection (TCP/UDP/TLS/H2 probing)
+- 🔑 REALITY key generation + auto-config
+- 📊 Multi-tunnel status with per-tunnel details
+- 🐕 Watchdog integration (systemd WatchdogSec)
+- 🔥 Automatic firewall + BBR + kernel tuning
 - 💾 Backup / Restore with auto-backup (cron)
 - 📡 Port forward manager (add/remove from menu)
 - 📤 Export client config (copy-paste ready)
 - 🔄 One-click update from GitHub
+- 🩺 Health check all tunnels
 
 ---
 
@@ -268,24 +321,40 @@ Features:
 
 ```
 iPShadowT/
-├── core/              Standalone engine (SDK)
+├── core/              Standalone engine (SDK) + Failover
 ├── cmd/ipshadowt/     CLI application
 ├── internal/
-│   ├── antidpi/       15 anti-DPI techniques
-│   ├── stealth/       Domain fronting, DNS tunnel, mimicry
-│   ├── transport/     8 transport protocols
+│   ├── acme/          Auto TLS certificate management
+│   ├── antidpi/       15 anti-DPI techniques + obfuscation
+│   ├── api/           REST API server
+│   ├── cdn/           CDN connector (Cloudflare, Gcore, Arvan)
+│   ├── client/        Client with DoH + obfuscation
+│   ├── cluster/       Multi-server cluster mode
+│   ├── config/        TOML configuration
+│   ├── configsync/    Encrypted config sync
 │   ├── crypto/        XChaCha20-Poly1305 encryption
-│   ├── mux/           Stream multiplexing
-│   ├── multipath/     Multi-path + aggregation
+│   ├── dns/           DNS-over-HTTPS resolver
+│   ├── health/        Health check / watchdog
+│   ├── loadbalancer/  5-strategy load balancer
+│   ├── metrics/       Prometheus-compatible metrics
+│   ├── multipath/     Multi-path + bandwidth aggregation
+│   ├── mux/           Stream multiplexing (smux)
+│   ├── plugin/        Plugin system (Transport/Auth/Filter)
+│   ├── pool/          Adaptive connection pool
+│   ├── ratelimit/     Per-user rate limiting
+│   ├── security/      IP whitelist, audit, brute-force
+│   ├── server/        Server with security + metrics + plugins
 │   ├── smart/         DPI detection + auto-select
-│   ├── tunnel/        Port forwarding + SOCKS5 + UDP
-│   ├── security/      Whitelist, audit, brute-force
+│   ├── stealth/       Domain fronting, DNS tunnel, mimicry
+│   ├── subscription/  V2RayNG/Clash subscription links
+│   ├── transport/     9 transport protocols (incl. full QUIC)
+│   ├── tun/           TUN device + split tunneling
+│   ├── tunnel/        Port forwarding + SOCKS5
+│   ├── upgrade/       Graceful zero-downtime upgrade
 │   ├── users/         User management
-│   ├── web/           Web panel
-│   ├── api/           REST API
-│   └── ...            20+ more modules
+│   └── web/           Real-time dashboard (WebSocket)
 ├── configs/           Example configurations
-├── deploy/            Systemd, install scripts
+├── deploy/            Systemd, scripts, Prometheus, Grafana
 └── examples/          SDK usage examples
 ```
 
