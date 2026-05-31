@@ -36,6 +36,7 @@ type Client struct {
 	quality     *stability.QualityMonitor
 	dpiDetect   *stability.DPIDetector
 	bufferTuner *stability.BufferTuner
+	warmup      *stability.WarmupPool
 }
 
 // New creates a new client instance
@@ -79,6 +80,7 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 		MaxMissed: 3,
 		OnDead: func(sessionID int) {
 			log.Warn("Session %d declared dead by heartbeat", sessionID)
+			c.quality.Unregister(sessionID)
 			c.reconnector.Trigger()
 		},
 	}, log)
@@ -102,6 +104,29 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 		c.pool.Add(session)
 		return nil
 	})
+	c.reconnector.SetSwitchFunc(func() error {
+		// Get DPI recommendation for best transport
+		recommended := c.dpiDetect.GetRecommendation()
+		if recommended != "" && recommended != c.cfg.Transport {
+			log.Warn("Switching transport: %s → %s (DPI recommendation)", c.cfg.Transport, recommended)
+			c.cfg.Transport = recommended
+			// Recreate transport
+			newTP, err := transport.NewTransport(c.cfg, log)
+			if err != nil {
+				return fmt.Errorf("transport switch failed: %w", err)
+			}
+			c.transport.Close()
+			c.transport = newTP
+			// Try connecting with new transport
+			session, err := c.createSession()
+			if err != nil {
+				return err
+			}
+			c.pool.Add(session)
+			return nil
+		}
+		return fmt.Errorf("no alternative transport available")
+	})
 
 	c.dpiDetect = stability.NewDPIDetector(log, func(pattern stability.DPIPattern) {
 		recommended := c.dpiDetect.GetRecommendation()
@@ -109,6 +134,15 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 	})
 
 	c.bufferTuner = stability.NewBufferTuner(stability.BufferConfig{}, log)
+
+	// Initialize warmup pool (pre-connects sessions in background)
+	c.warmup = stability.NewWarmupPool(stability.WarmupConfig{
+		MinReady: 1,
+		MaxReady: 2,
+		Factory: func() (interface{}, error) {
+			return c.createSession()
+		},
+	}, log)
 
 	return c, nil
 }
@@ -137,9 +171,15 @@ func (c *Client) Start() error {
 	c.wg.Add(1)
 	go c.maintainSessions()
 
+	// Connect quality monitor to session pool for smart load balancing
+	c.pool.SetQualityFunc(func(sessionID int) int {
+		return c.quality.GetScore(sessionID)
+	})
+
 	// Start stability modules
 	c.heartbeat.Start()
 	c.quality.Start()
+	c.warmup.Start()
 
 	return nil
 }
@@ -175,11 +215,18 @@ func (c *Client) connectSessions() error {
 				return fmt.Errorf("session closed")
 			}
 			// Use smux's built-in ping (open+close a stream as health check)
+			start := time.Now()
 			stream, err := session.OpenStream()
 			if err != nil {
+				c.quality.RecordPing(sessionID)
 				return err
 			}
 			stream.Close()
+			rtt := time.Since(start)
+			// Feed RTT into quality monitor
+			c.quality.RecordRTT(sessionID, rtt)
+			c.quality.RecordPing(sessionID)
+			c.quality.RecordPong(sessionID)
 			return nil
 		})
 		c.quality.Register(sessionID)
@@ -205,7 +252,6 @@ func (c *Client) createSession() (*mux.Session, error) {
 	var muxConn net.Conn = conn
 	if c.obfuscation != nil {
 		obfConn := antidpi.NewObfuscator(conn, *c.obfuscation, c.log)
-		// Wrap as net.Conn (obfuscator implements Read/Write/Close)
 		muxConn = &obfuscatedConn{Conn: conn, obf: obfConn}
 	}
 
@@ -215,8 +261,19 @@ func (c *Client) createSession() (*mux.Session, error) {
 		return nil, fmt.Errorf("handshake failed: %w", err)
 	}
 
-	// Create mux session
-	session, err := mux.NewClientSession(muxConn, &c.cfg.Mux, c.log)
+	// Apply buffer tuner recommendations to mux config
+	muxCfg := c.cfg.Mux
+	tunedRecv := c.bufferTuner.GetRecvBuffer()
+	tunedSend := c.bufferTuner.GetSendBuffer()
+	if tunedRecv > muxCfg.RecvBuffer {
+		muxCfg.RecvBuffer = tunedRecv
+	}
+	if tunedSend > muxCfg.StreamBuffer {
+		muxCfg.StreamBuffer = tunedSend
+	}
+
+	// Create mux session with tuned buffers
+	session, err := mux.NewClientSession(muxConn, &muxCfg, c.log)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("mux session failed: %w", err)
@@ -313,13 +370,24 @@ func (c *Client) checkAndReconnect() {
 
 		for i := 0; i < needed; i++ {
 			start := time.Now()
-			session, err := c.createSession()
-			if err != nil {
-				c.log.Error("Reconnect failed: %v", err)
-				// Record for DPI analysis
-				c.dpiDetect.RecordFailure(c.cfg.Transport, err, time.Since(start))
-				continue
+
+			// Try warmup pool first (instant, no dial latency)
+			var session *mux.Session
+			var err error
+			warmSession, warmErr := c.warmup.Get()
+			if warmErr == nil && warmSession != nil {
+				session = warmSession.(*mux.Session)
+				c.log.Debug("Got pre-connected session from warmup pool")
+			} else {
+				// Fallback: create new session
+				session, err = c.createSession()
+				if err != nil {
+					c.log.Error("Reconnect failed: %v", err)
+					c.dpiDetect.RecordFailure(c.cfg.Transport, err, time.Since(start))
+					continue
+				}
 			}
+
 			c.pool.Add(session)
 
 			// Register with heartbeat
@@ -328,11 +396,17 @@ func (c *Client) checkAndReconnect() {
 				if session.IsClosed() {
 					return fmt.Errorf("session closed")
 				}
+				start := time.Now()
 				stream, err := session.OpenStream()
 				if err != nil {
+					c.quality.RecordPing(newID)
 					return err
 				}
 				stream.Close()
+				rtt := time.Since(start)
+				c.quality.RecordRTT(newID, rtt)
+				c.quality.RecordPing(newID)
+				c.quality.RecordPong(newID)
 				return nil
 			})
 			c.quality.Register(newID)
@@ -358,6 +432,7 @@ func (c *Client) Stop() {
 	c.heartbeat.Stop()
 	c.quality.Stop()
 	c.reconnector.Stop()
+	c.warmup.Stop()
 
 	// Stop forwarders
 	for _, fwd := range c.forwards {

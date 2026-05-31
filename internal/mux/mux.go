@@ -125,11 +125,12 @@ func buildSmuxConfig(cfg *config.MuxConfig) *smux.Config {
 
 // SessionPool manages multiple mux sessions for load distribution
 type SessionPool struct {
-	sessions []*Session
-	mu       sync.RWMutex
-	index    int
-	cfg      *config.MuxConfig
-	log      *logger.Logger
+	sessions    []*Session
+	mu          sync.RWMutex
+	index       int
+	cfg         *config.MuxConfig
+	log         *logger.Logger
+	qualityFunc func(idx int) int // returns quality score 0-100 for session index
 }
 
 // NewSessionPool creates a new session pool
@@ -141,6 +142,13 @@ func NewSessionPool(cfg *config.MuxConfig, log *logger.Logger) *SessionPool {
 	}
 }
 
+// SetQualityFunc sets a function that returns quality score for a session
+func (p *SessionPool) SetQualityFunc(fn func(idx int) int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.qualityFunc = fn
+}
+
 // Add adds a session to the pool
 func (p *SessionPool) Add(session *Session) {
 	p.mu.Lock()
@@ -148,7 +156,7 @@ func (p *SessionPool) Add(session *Session) {
 	p.sessions = append(p.sessions, session)
 }
 
-// GetStream gets a stream from the least-loaded session
+// GetStream gets a stream from the best session (quality + load balanced)
 func (p *SessionPool) GetStream() (*smux.Stream, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -157,27 +165,40 @@ func (p *SessionPool) GetStream() (*smux.Stream, error) {
 		return nil, fmt.Errorf("no sessions available")
 	}
 
-	// Find session with least streams (load balancing)
+	// Find best session: combine quality score and stream count
 	var bestSession *Session
-	minStreams := int(^uint(0) >> 1) // max int
+	bestScore := -1
 
-	for _, s := range p.sessions {
+	for idx, s := range p.sessions {
 		if s.IsClosed() {
 			continue
 		}
-		if n := s.NumStreams(); n < minStreams {
-			minStreams = n
+
+		numStreams := s.NumStreams()
+
+		// Check max streams limit
+		if p.cfg.MaxStreams > 0 && numStreams >= p.cfg.MaxStreams {
+			continue
+		}
+
+		// Calculate combined score: quality (0-100) minus load penalty
+		quality := 100
+		if p.qualityFunc != nil {
+			quality = p.qualityFunc(idx + 1) // sessionID is 1-based
+		}
+
+		// Penalize sessions with more streams (10 points per 10 streams)
+		loadPenalty := numStreams
+		score := quality - loadPenalty
+
+		if score > bestScore {
+			bestScore = score
 			bestSession = s
 		}
 	}
 
 	if bestSession == nil {
-		return nil, fmt.Errorf("all sessions are closed")
-	}
-
-	// Check if we should limit streams per session
-	if p.cfg.MaxStreams > 0 && minStreams >= p.cfg.MaxStreams {
-		return nil, fmt.Errorf("all sessions at max capacity (%d streams)", p.cfg.MaxStreams)
+		return nil, fmt.Errorf("all sessions are closed or at max capacity")
 	}
 
 	return bestSession.OpenStream()
