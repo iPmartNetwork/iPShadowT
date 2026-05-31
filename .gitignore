@@ -3,17 +3,23 @@
 /ipshadowt-linux-*
 /ipshadowt-windows-*
 /ipshadowt-darwin-*
+/ipshadowt-freebsd-*
 *.exe
 
 # Build
 /build/
 /dist/
 
+# Test
+coverage.out
+coverage.html
+
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+.kiro/
 
 # OS
 .DS_Store
@@ -24,3 +30,7 @@ Thumbs.db
 
 # Config with secrets
 *.local.toml
+
+# Fuzz
+/internal/crypto/testdata/fuzz/
+/internal/config/testdata/fuzz/

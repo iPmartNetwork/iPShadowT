@@ -1,0 +1,16 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default'
+
+receivers:
+  - name: 'default'
+    # Uncomment and configure for Telegram notifications:
+    # webhook_configs:
+    #   - url: 'http://localhost:9087/alert'
+    #     send_resolved: true

@@ -1,0 +1,129 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "title": "Uptime",
+      "type": "stat",
+      "targets": [{"expr": "ipshadowt_uptime_seconds", "legendFormat": ""}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "title": "Active Connections",
+      "type": "stat",
+      "targets": [{"expr": "ipshadowt_connections_active", "legendFormat": ""}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}, "unit": "decbytes"}},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "title": "Total Received",
+      "type": "stat",
+      "targets": [{"expr": "ipshadowt_bytes_received_total", "legendFormat": ""}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}, "unit": "decbytes"}},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "title": "Total Sent",
+      "type": "stat",
+      "targets": [{"expr": "ipshadowt_bytes_sent_total", "legendFormat": ""}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "title": "Failed Connections",
+      "type": "stat",
+      "targets": [{"expr": "ipshadowt_connections_failed", "legendFormat": ""}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": null}]}}},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}},
+      "title": "Active Streams",
+      "type": "stat",
+      "targets": [{"expr": "ipshadowt_streams_active", "legendFormat": ""}]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "title": "Traffic",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"lineWidth": 2, "fillOpacity": 20}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "options": {"legend": {"displayMode": "list"}},
+      "title": "Traffic Rate",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "rate(ipshadowt_bytes_received_total[1m])", "legendFormat": "Download"},
+        {"expr": "rate(ipshadowt_bytes_sent_total[1m])", "legendFormat": "Upload"}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"lineWidth": 2, "fillOpacity": 10}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "options": {"legend": {"displayMode": "list"}},
+      "title": "Connections",
+      "type": "timeseries",
+      "targets": [
+        {"expr": "ipshadowt_connections_active", "legendFormat": "Active"},
+        {"expr": "rate(ipshadowt_connections_total[5m])", "legendFormat": "Rate (per 5m)"}
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "title": "Security & Failover",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"lineWidth": 2}}},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 15},
+      "title": "DPI Probes Detected",
+      "type": "timeseries",
+      "targets": [{"expr": "rate(ipshadowt_probes_detected[5m])", "legendFormat": "Probes/5m"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"lineWidth": 2}}},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 15},
+      "title": "Path Failovers",
+      "type": "timeseries",
+      "targets": [{"expr": "increase(ipshadowt_path_failovers[10m])", "legendFormat": "Failovers"}]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ipshadowt", "tunnel", "anti-dpi"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "title": "iPShadowT Dashboard",
+  "uid": "ipshadowt-main",
+  "version": 1
+}
