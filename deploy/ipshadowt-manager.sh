@@ -1,7 +1,10 @@
 #!/bin/bash
-# iPShadowT Manager v1.0.0
-# iPmart Network (Ali Hassanzadeh)
-# https://github.com/iPmartNetwork/iPShadowT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  iPShadowT Manager v2.0.0
+#  Anti-DPI Multi-Transport Tunnel Engine
+#  iPmart Network (Ali Hassanzadeh)
+#  https://github.com/iPmartNetwork/iPShadowT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ─── Constants ────────────────────────────────────
 VERSION="2.0.0"
@@ -13,61 +16,62 @@ BACKUP_DIR="/etc/ipshadowt/backups"
 SERVICE_NAME="ipshadowt"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 SYSCTL_FILE="/etc/sysctl.d/99-ipshadowt.conf"
+LOG_FILE="/var/log/ipshadowt-manager.log"
 
 # ─── Colors ───────────────────────────────────────
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
 B='\033[0;34m'
+M='\033[0;35m'
 C='\033[0;36m'
 W='\033[1;37m'
 D='\033[0;90m'
 N='\033[0m'
+BOLD='\033[1m'
 
 # ─── UI Helpers ───────────────────────────────────
-print_line()  { echo -e "${B}────────────────────────────────────────────────────${N}"; }
-print_dline() { echo -e "${B}════════════════════════════════════════════════════${N}"; }
-msg_ok()      { echo -e "  ${G}[OK]${N} $1"; }
-msg_err()     { echo -e "  ${R}[!!]${N} $1"; }
-msg_warn()    { echo -e "  ${Y}[**]${N} $1"; }
-msg_info()    { echo -e "  ${C}[>>]${N} $1"; }
-msg_ask()     { echo -ne "  ${W}[?]${N} $1"; }
+print_line()  { echo -e "${B}─────────────────────────────────────────────────────────${N}"; }
+print_dline() { echo -e "${B}═════════════════════════════════════════════════════════${N}"; }
+msg_ok()      { echo -e "  ${G}✓${N} $1"; }
+msg_err()     { echo -e "  ${R}✗${N} $1"; }
+msg_warn()    { echo -e "  ${Y}⚠${N} $1"; }
+msg_info()    { echo -e "  ${C}➤${N} $1"; }
+msg_ask()     { echo -ne "  ${W}?${N} $1"; }
+msg_step()    { echo -e "  ${M}●${N} $1"; }
 
 print_banner() {
     clear
     echo ""
     print_dline
-    echo -e "${W}   _ ____  ____  _               _          _____ ${N}"
-    echo -e "${W}  (_)  _ \\/ ___|| |__   __ _  __| | _____  |_   _|${N}"
-    echo -e "${W}  | | |_) \\___ \\| '_ \\ / _\` |/ _\` |/ _ \\ \\ /\\ / /| |  ${N}"
-    echo -e "${W}  | |  __/ ___) | | | | (_| | (_| | (_) \\ V  V / | |  ${N}"
-    echo -e "${W}  |_|_|   |____/|_| |_|\\__,_|\\__,_|\\___/ \\_/\\_/  |_|  ${N}"
+    echo -e "${C}   _ ____  ____  _               _          _____ ${N}"
+    echo -e "${C}  (_)  _ \\/ ___|| |__   __ _  __| | _____  |_   _|${N}"
+    echo -e "${C}  | | |_) \\___ \\| '_ \\ / _\` |/ _\` |/ _ \\ \\ /\\ / /| |  ${N}"
+    echo -e "${C}  | |  __/ ___) | | | | (_| | (_| | (_) \\ V  V / | |  ${N}"
+    echo -e "${C}  |_|_|   |____/|_| |_|\\__,_|\\__,_|\\___/ \\_/\\_/  |_|  ${N}"
     echo ""
-    echo -e "  ${D}Anti-DPI Multi-Transport Tunnel Engine${N}"
-    echo -e "  ${D}iPmart Network (Ali Hassanzadeh) - v${VERSION}${N}"
+    echo -e "  ${BOLD}Anti-DPI Multi-Transport Tunnel Engine${N}"
+    echo -e "  ${D}iPmart Network • v${VERSION} • github.com/iPmartNetwork${N}"
     print_dline
-    # Server info
+    # Server info line
     local ip=$(curl -s4 --max-time 2 ifconfig.me 2>/dev/null || echo "N/A")
-    local geo=$(curl -s --max-time 2 "http://ip-api.com/line/${ip}?fields=country,city,isp" 2>/dev/null)
+    local geo=$(curl -s --max-time 2 "http://ip-api.com/line/${ip}?fields=country,city" 2>/dev/null)
     local country=$(echo "$geo" | sed -n '1p')
     local city=$(echo "$geo" | sed -n '2p')
-    local isp=$(echo "$geo" | sed -n '3p')
-    echo -e "  ${D}IP: ${W}${ip}${D}  |  ${city}, ${country}  |  ${isp}${N}"
+    echo -e "  ${D}IP: ${W}${ip}${D}  •  ${city}, ${country}${N}"
     print_dline
     echo ""
 }
 
 press_enter() {
     echo ""
-    msg_ask "Press [Enter] to return to menu..."
-    read -r
+    msg_ask "Press Enter to continue..."; read -r
 }
 
 # ─── System Checks ────────────────────────────────
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        msg_err "This script must be run as root."
-        echo "    Run: sudo bash $0"
+        echo -e "${R}Error: Run as root (sudo bash $0)${N}"
         exit 1
     fi
 }
@@ -77,267 +81,247 @@ detect_arch() {
     case $ARCH in
         x86_64)  ARCH="amd64" ;;
         aarch64) ARCH="arm64" ;;
-        armv7l)  ARCH="arm" ;;
+        armv7l)  ARCH="armv7" ;;
+        armv6l)  ARCH="armv6" ;;
+        mips)    ARCH="mips" ;;
+        mipsel)  ARCH="mipsle" ;;
         *) msg_err "Unsupported architecture: $ARCH"; exit 1 ;;
     esac
     OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 }
 
-detect_os_type() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        OS_NAME=$ID
-        OS_VERSION=$VERSION_ID
-    else
-        OS_NAME="unknown"
-        OS_VERSION="0"
-    fi
-}
-
 is_installed() { [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; }
 is_running()   { systemctl is-active --quiet ${SERVICE_NAME} 2>/dev/null; }
+get_version()  { is_installed && (${INSTALL_DIR}/${BINARY_NAME} -v 2>/dev/null | head -1 | awk '{print $NF}' || echo "?") || echo "N/A"; }
+gen_pass()     { tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w 32 | head -n 1; }
 
-get_version() {
-    if is_installed; then
-        ${INSTALL_DIR}/${BINARY_NAME} -v 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown"
-    else
-        echo "not installed"
-    fi
-}
-
-gen_pass() { cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1; }
-
-validate_ip() {
-    local ip=$1
-    [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && return 0
-    [[ $ip =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$ ]] && return 0
+validate_addr() {
+    local addr=$1
+    [[ $addr =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && return 0
+    [[ $addr =~ ^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$ ]] && return 0
     return 1
 }
 
-# ─── Install ──────────────────────────────────────
+count_tunnels() {
+    local count=0
+    for f in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
+        [ -f "$f" ] && count=$((count+1))
+    done
+    echo $count
+}
+
+count_running() {
+    local count=0
+    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+        systemctl is-active --quiet "$svc" 2>/dev/null && count=$((count+1))
+    done
+    echo $count
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  INSTALL
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_install() {
     print_banner
-    echo -e "  ${W}[ INSTALL ]${N}"
+    echo -e "  ${W}[ INSTALL iPShadowT ]${N}"
     echo ""
 
     if is_installed; then
-        msg_warn "iPShadowT already installed ($(get_version))"
+        msg_warn "Already installed ($(get_version))"
         msg_ask "Reinstall? [y/N]: "; read -r ans
         [[ "$ans" != "y" ]] && return
     fi
 
     detect_arch
-    msg_info "System: ${OS}/${ARCH}"
+    msg_step "Platform: ${OS}/${ARCH}"
 
     # Prerequisites
-    msg_info "Installing prerequisites..."
-    apt-get update -qq >/dev/null 2>&1 || true
-    for pkg in curl wget jq iptables tar; do
-        command -v $pkg &>/dev/null || apt-get install -y -qq $pkg >/dev/null 2>&1 || true
+    msg_step "Installing prerequisites..."
+    apt-get update -qq >/dev/null 2>&1 || yum update -q -y >/dev/null 2>&1 || true
+    for pkg in curl wget jq tar openssl; do
+        command -v $pkg &>/dev/null || {
+            apt-get install -y -qq $pkg >/dev/null 2>&1 || yum install -y -q $pkg >/dev/null 2>&1 || true
+        }
     done
     msg_ok "Prerequisites ready"
 
-    # Download binary
-    msg_info "Downloading binary..."
+    # Download
+    msg_step "Downloading iPShadowT..."
     local url="https://github.com/${GITHUB_REPO}/releases/latest/download/${BINARY_NAME}-${OS}-${ARCH}"
-    local tmp="/tmp/${BINARY_NAME}-dl"
+    local tmp="/tmp/${BINARY_NAME}-download"
 
     if curl -fSL --progress-bar -o "$tmp" "$url" 2>/dev/null; then
         chmod +x "$tmp"
         mv "$tmp" "${INSTALL_DIR}/${BINARY_NAME}"
-        msg_ok "Binary installed"
-    elif [ -f "./${BINARY_NAME}-${OS}-${ARCH}" ]; then
-        cp "./${BINARY_NAME}-${OS}-${ARCH}" "${INSTALL_DIR}/${BINARY_NAME}"
-        chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-        msg_ok "Binary installed (local)"
+        msg_ok "Binary installed: ${INSTALL_DIR}/${BINARY_NAME}"
     elif [ -f "./${BINARY_NAME}" ]; then
         cp "./${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
         chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-        msg_ok "Binary installed (local)"
+        msg_ok "Binary installed (local copy)"
     else
-        msg_err "Download failed. Place binary in current dir and retry."
+        msg_err "Download failed. Check network or place binary in current dir."
         return 1
     fi
 
-    # Config dir
-    mkdir -p "${CONFIG_DIR}"
+    # Directories
+    mkdir -p "${CONFIG_DIR}" "${BACKUP_DIR}"
 
     # Systemd service
-    cat > "${SERVICE_FILE}" << EOF
+    cat > "${SERVICE_FILE}" << 'SVCEOF'
 [Unit]
-Description=iPShadowT Tunnel
+Description=iPShadowT Anti-DPI Tunnel
 After=network.target network-online.target
 Wants=network-online.target
+
 [Service]
 Type=simple
-ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${CONFIG_DIR}/config.toml
+ExecStart=/usr/local/bin/ipshadowt -c /etc/ipshadowt/config.toml
 Restart=always
-RestartSec=5
-LimitNOFILE=65535
+RestartSec=3
+LimitNOFILE=1048576
+LimitNPROC=infinity
+TasksMax=infinity
+WatchdogSec=60
+
 [Install]
 WantedBy=multi-user.target
-EOF
+SVCEOF
     systemctl daemon-reload
     systemctl enable ${SERVICE_NAME} >/dev/null 2>&1
     msg_ok "Systemd service created"
 
     # Kernel tuning
     cat > "${SYSCTL_FILE}" << 'EOF'
-net.ipv4.ip_forward=1
-net.core.rmem_max=16777216
-net.core.wmem_max=16777216
-net.ipv4.tcp_rmem=4096 524288 16777216
-net.ipv4.tcp_wmem=4096 524288 16777216
-net.ipv4.tcp_fastopen=3
-net.ipv4.tcp_slow_start_after_idle=0
-net.core.somaxconn=65535
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
+# iPShadowT kernel tuning
+net.ipv4.ip_forward = 1
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_congestion_control = bbr
+net.core.default_qdisc = fq
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 524288 16777216
+net.ipv4.tcp_wmem = 4096 524288 16777216
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 15
 EOF
     sysctl -p "${SYSCTL_FILE}" >/dev/null 2>&1 || true
-    msg_ok "Kernel tuned + BBR enabled"
+    msg_ok "Kernel optimized (BBR + fast open)"
 
     # Firewall
     if command -v ufw &>/dev/null; then
         ufw allow 443/tcp >/dev/null 2>&1
         ufw allow 443/udp >/dev/null 2>&1
+        msg_ok "Firewall: port 443 opened"
     fi
-    msg_ok "Firewall configured"
 
     echo ""
     print_line
-    msg_ok "Installation complete!"
+    msg_ok "Installation complete! (v$(get_version))"
     print_line
     echo ""
     msg_ask "Configure tunnel now? [Y/n]: "; read -r ans
-    [[ "${ans:-y}" == "y" ]] && do_configure
+    [[ "${ans:-y}" =~ ^[Yy]$ ]] && do_configure
 }
 
-# ─── Configure ────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  CONFIGURE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_configure() {
     print_banner
-    echo -e "  ${W}[ CONFIGURE TUNNEL ]${N}"
+    echo -e "  ${W}[ CONFIGURE ]${N}"
     echo ""
-    echo -e "  ${C}1)${N} Setup as ${W}Iran Server${N} (Client - behind filter)"
-    echo -e "  ${C}2)${N} Setup as ${W}Foreign Server${N} (Server - abroad)"
+    echo -e "  ${C}1)${N} Setup as ${W}Iran Server${N}     ${D}(Client - connects to foreign)${N}"
+    echo -e "  ${C}2)${N} Setup as ${W}Foreign Server${N}  ${D}(Server - accepts connections)${N}"
     echo -e "  ${C}3)${N} Edit config manually"
     echo -e "  ${C}4)${N} Show current config"
-    echo -e "  ${C}5)${N} Auto-detect best transport"
-    echo -e "  ${C}6)${N} Add Port Forward"
+    echo -e "  ${C}5)${N} Test transport to server"
+    echo -e "  ${C}6)${N} Add port forward"
+    echo -e "  ${C}7)${N} Generate REALITY keys"
+    echo -e "  ${C}8)${N} Generate random password"
+    echo -e "  ${C}9)${N} Export client config"
+    echo ""
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r choice
 
     case $choice in
-        1) setup_iran ;;
-        2) setup_foreign ;;
+        1) setup_client ;;
+        2) setup_server ;;
         3) nano "${CONFIG_DIR}/config.toml" 2>/dev/null || vi "${CONFIG_DIR}/config.toml" ;;
-        4) [ -f "${CONFIG_DIR}/config.toml" ] && cat "${CONFIG_DIR}/config.toml" || msg_err "No config" ;;
-        5) msg_ask "Server IP: "; read -r ip; test_transport "$ip" ;;
+        4) echo ""; [ -f "${CONFIG_DIR}/config.toml" ] && cat "${CONFIG_DIR}/config.toml" || msg_err "No config found" ;;
+        5) msg_ask "Server IP/domain: "; read -r ip; test_transport "$ip" ;;
         6) add_port_forward ;;
+        7) is_installed && ${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys || msg_err "Not installed" ;;
+        8) echo ""; msg_ok "Password: $(gen_pass)" ;;
+        9) export_config ;;
         0) return ;;
+        *) msg_err "Invalid option" ;;
     esac
     press_enter
 }
 
-setup_iran() {
+# ─── Client Setup (Iran) ─────────────────────────
+setup_client() {
     echo ""
     print_line
-    echo -e "  ${W}IRAN SERVER (CLIENT) SETUP${N}"
+    echo -e "  ${W}CLIENT SETUP (Iran → Foreign)${N}"
     print_line
     echo ""
 
-    msg_ask "Foreign server IP/domain: "; read -r remote_ip
-    validate_ip "$remote_ip" || { msg_err "Invalid address"; return; }
+    # Remote address
+    msg_ask "Foreign server IP/domain: "; read -r remote_addr
+    validate_addr "$remote_addr" || { msg_err "Invalid address"; return; }
 
-    msg_ask "Foreign server port [443]: "; read -r port
+    msg_ask "Port [443]: "; read -r port
     port=${port:-443}
 
+    # Password
     local password=$(gen_pass)
-    msg_ask "Password [auto-generate]: "; read -r up
-    [ -n "$up" ] && password="$up"
+    msg_ask "Password [auto]: "; read -r user_pass
+    [ -n "$user_pass" ] && password="$user_pass"
 
+    # Transport selection
     echo ""
-    echo -e "  ${W}Select Transport:${N}"
-    echo -e "    ${C}1)${N} reality     ${D}(recommended - max stealth)${N}"
-    echo -e "    ${C}2)${N} kcp         ${D}(works on filtered IPs)${N}"
-    echo -e "    ${C}3)${N} wsmux       ${D}(CDN compatible)${N}"
-    echo -e "    ${C}4)${N} shadowtls   ${D}(no cert needed)${N}"
-    echo -e "    ${C}5)${N} tcpmux      ${D}(simple & fast)${N}"
-    echo -e "    ${C}6)${N} h2mux       ${D}(looks like web traffic)${N}"
-    echo -e "    ${C}7)${N} grpc        ${D}(looks like API)${N}"
-    echo -e "    ${C}8)${N} cdn         ${D}(Cloudflare CDN - IP hidden)${N}"
+    echo -e "  ${W}Transport:${N}"
+    echo -e "    ${C}1)${N} reality      ${D}— recommended, max stealth${N}"
+    echo -e "    ${C}2)${N} shadowtls    ${D}— no cert needed, good stealth${N}"
+    echo -e "    ${C}3)${N} wsmux        ${D}— WebSocket, CDN compatible${N}"
+    echo -e "    ${C}4)${N} h2mux        ${D}— HTTP/2, looks like browsing${N}"
+    echo -e "    ${C}5)${N} grpc         ${D}— gRPC, looks like API traffic${N}"
+    echo -e "    ${C}6)${N} tcpmux       ${D}— simple TCP, fastest${N}"
+    echo -e "    ${C}7)${N} kcp          ${D}— UDP, works when TCP blocked${N}"
+    echo -e "    ${C}8)${N} quic         ${D}— QUIC/UDP, 0-RTT fast${N}"
+    echo -e "    ${C}9)${N} cdn          ${D}— via Cloudflare CDN (IP hidden)${N}"
+    echo ""
     msg_ask "Choice [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="shadowtls";; 5) transport="tcpmux";; 6) transport="h2mux";; 7) transport="grpc";; 8) transport="wsmux";; esac
+    case $tc in
+        2) transport="shadowtls" ;;
+        3) transport="wsmux" ;;
+        4) transport="h2mux" ;;
+        5) transport="grpc" ;;
+        6) transport="tcpmux" ;;
+        7) transport="kcp" ;;
+        8) transport="quic" ;;
+        9) transport="wsmux" ;;
+    esac
 
-    # CDN mode configuration
-    local cdn_enabled=false
-    local cdn_domain=""
-    local cdn_provider="cloudflare"
-    if [ "$tc" = "8" ]; then
-        cdn_enabled=true
-        echo ""
-        print_line
-        echo -e "  ${W}CDN MODE SETUP${N}"
-        echo -e "  ${D}Traffic routes through CDN - your server IP is hidden${N}"
-        print_line
-        echo ""
-        msg_ask "CDN domain (e.g. your-domain.com): "; read -r cdn_domain
-        [ -z "$cdn_domain" ] && { msg_err "CDN domain required"; return; }
-        remote_ip="$cdn_domain"
-        port="443"
-        echo ""
-        echo -e "  ${C}1)${N} Cloudflare  ${D}(recommended - free plan works)${N}"
-        echo -e "  ${C}2)${N} Gcore"
-        echo -e "  ${C}3)${N} Arvan"
-        echo -e "  ${C}4)${N} Custom"
-        msg_ask "CDN Provider [1]: "; read -r cp
-        case $cp in 2) cdn_provider="gcore";; 3) cdn_provider="arvan";; 4) cdn_provider="custom";; esac
-    fi
-
-    # TLS option for tcpmux
-    local tls_enabled=false
-    local tls_cert=""
-    local tls_key=""
-    if [ "$transport" = "tcpmux" ] && [ "$cdn_enabled" = "false" ]; then
-        echo ""
-        msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
-        if [ "$tls_ans" = "y" ]; then
-            tls_enabled=true
-            msg_ask "TLS cert path [/etc/ipshadowt/cert.pem]: "; read -r tc_path
-            tls_cert=${tc_path:-/etc/ipshadowt/cert.pem}
-            msg_ask "TLS key path [/etc/ipshadowt/key.pem]: "; read -r tk_path
-            tls_key=${tk_path:-/etc/ipshadowt/key.pem}
-        fi
-    fi
-
-    msg_ask "SOCKS5 port [1080]: "; read -r sp
-    sp=${sp:-1080}
-
-    # Watchdog / Health check
-    msg_ask "Enable watchdog health check? [Y/n]: "; read -r wd_ans
-    local watchdog_enabled=true
-    local health_port=9090
-    if [[ "$wd_ans" == "n" ]]; then
-        watchdog_enabled=false
-    else
-        msg_ask "Health check port [9090]: "; read -r hp
-        health_port=${hp:-9090}
-    fi
-
-    mkdir -p "${CONFIG_DIR}"
-
-    # Build TLS section
-    local tls_section=""
-    if [ "$tls_enabled" = "true" ]; then
-        tls_section="tls_cert = \"${tls_cert}\"
-tls_key = \"${tls_key}\""
-    fi
-
-    # Build CDN section
+    # CDN mode
     local cdn_section=""
-    if [ "$cdn_enabled" = "true" ]; then
+    if [ "$tc" = "9" ]; then
+        echo ""
+        echo -e "  ${W}CDN Setup:${N}"
+        msg_ask "CDN domain (e.g. your-domain.com): "; read -r cdn_domain
+        [ -z "$cdn_domain" ] && { msg_err "Domain required for CDN mode"; return; }
+        remote_addr="$cdn_domain"
+        port="443"
+        echo -e "    ${C}1)${N} Cloudflare  ${C}2)${N} Gcore  ${C}3)${N} Arvan  ${C}4)${N} Custom"
+        msg_ask "Provider [1]: "; read -r cp
+        local cdn_provider="cloudflare"
+        case $cp in 2) cdn_provider="gcore";; 3) cdn_provider="arvan";; 4) cdn_provider="custom";; esac
         cdn_section="
 [cdn]
 enabled = true
@@ -348,21 +332,61 @@ tls = true
 early_data = true"
     fi
 
-    # Build watchdog section
-    local watchdog_section=""
-    if [ "$watchdog_enabled" = "true" ]; then
-        watchdog_section="
+    # TLS for tcpmux
+    local tls_section=""
+    if [ "$transport" = "tcpmux" ] && [ "$tc" != "9" ]; then
+        echo ""
+        msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
+        if [[ "$tls_ans" =~ ^[Yy]$ ]]; then
+            msg_ask "Cert path [/etc/ipshadowt/cert.pem]: "; read -r cert_path
+            msg_ask "Key path [/etc/ipshadowt/key.pem]: "; read -r key_path
+            tls_section="tls_cert = \"${cert_path:-/etc/ipshadowt/cert.pem}\"
+tls_key = \"${key_path:-/etc/ipshadowt/key.pem}\""
+        fi
+    fi
+
+    # REALITY config
+    local reality_section=""
+    if [ "$transport" = "reality" ]; then
+        echo ""
+        echo -e "  ${W}REALITY Settings:${N}"
+        msg_ask "SNI (e.g. www.google.com) [www.google.com]: "; read -r sni
+        sni=${sni:-www.google.com}
+        msg_ask "Public key (from server --gen-reality-keys): "; read -r pub_key
+        msg_ask "Short ID (from server): "; read -r short_id
+        reality_section="
+[reality]
+server_name = \"${sni}\"
+public_key = \"${pub_key}\"
+short_id = \"${short_id}\""
+    fi
+
+    # SOCKS5 port
+    msg_ask "SOCKS5 listen port [1080]: "; read -r socks_port
+    socks_port=${socks_port:-1080}
+
+    # Health check
+    echo ""
+    msg_ask "Enable health watchdog? [Y/n]: "; read -r wd
+    local health_section=""
+    local health_port=9090
+    if [[ ! "$wd" =~ ^[Nn]$ ]]; then
+        msg_ask "Health port [9090]: "; read -r hp
+        health_port=${hp:-9090}
+        health_section="
 [health]
 enabled = true
 listen = \"127.0.0.1:${health_port}\""
     fi
 
+    # Write config
+    mkdir -p "${CONFIG_DIR}"
     cat > "${CONFIG_DIR}/config.toml" << EOF
-# iPShadowT Client - Generated by Manager
+# iPShadowT Client Config — Generated by Manager v${VERSION}
 mode = "client"
 log_level = "info"
 transport = "${transport}"
-remote_addr = "${remote_ip}:${port}"
+remote_addr = "${remote_addr}:${port}"
 password = "${password}"
 ${tls_section}
 
@@ -386,60 +410,50 @@ utls_fingerprint = "chrome"
 fragment = true
 fragment_size = "40-80"
 padding = true
+padding_size = "16-256"
 ${cdn_section}
-${watchdog_section}
+${health_section}
+${reality_section}
 
 [[forwards]]
 name = "socks5"
 type = "socks5"
-listen = "0.0.0.0:${sp}"
+listen = "0.0.0.0:${socks_port}"
 EOF
 
-    # Create systemd service with watchdog if enabled
-    if [ "$watchdog_enabled" = "true" ]; then
-        cat > "${SERVICE_FILE}" << EOF
-[Unit]
-Description=iPShadowT Tunnel
-After=network.target network-online.target
-Wants=network-online.target
-[Service]
-Type=simple
-ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${CONFIG_DIR}/config.toml
-Restart=always
-RestartSec=5
-LimitNOFILE=65535
-WatchdogSec=60
-ExecStartPost=/bin/bash -c 'sleep 3 && curl -sf http://127.0.0.1:${health_port}/health >/dev/null || true'
-[Install]
-WantedBy=multi-user.target
-EOF
+    # Update systemd with watchdog
+    if [ -n "$health_section" ]; then
+        sed -i "s|WatchdogSec=.*|WatchdogSec=60|" "${SERVICE_FILE}" 2>/dev/null
         systemctl daemon-reload
     fi
 
+    # Summary
     echo ""
     print_line
-    echo -e "  ${G}CONFIG SAVED${N}"
+    echo -e "  ${G}✓ CONFIG SAVED${N}"
     print_line
-    echo -e "  Remote:    ${W}${remote_ip}:${port}${N}"
-    echo -e "  Transport: ${W}${transport}${N}"
-    [ "$cdn_enabled" = "true" ] && echo -e "  CDN:       ${W}${cdn_provider} (${cdn_domain})${N}"
-    [ "$tls_enabled" = "true" ] && echo -e "  TLS:       ${W}Enabled${N}"
-    [ "$watchdog_enabled" = "true" ] && echo -e "  Watchdog:  ${W}:${health_port}${N}"
-    echo -e "  Password:  ${W}${password}${N}"
-    echo -e "  SOCKS5:    ${W}0.0.0.0:${sp}${N}"
+    echo -e "  Remote:     ${W}${remote_addr}:${port}${N}"
+    echo -e "  Transport:  ${W}${transport}${N}"
+    echo -e "  Password:   ${W}${password}${N}"
+    echo -e "  SOCKS5:     ${W}0.0.0.0:${socks_port}${N}"
+    [ -n "$cdn_section" ] && echo -e "  CDN:        ${W}${cdn_provider} (${cdn_domain:-})${N}"
+    [ -n "$tls_section" ] && echo -e "  TLS:        ${W}Enabled${N}"
+    [ -n "$health_section" ] && echo -e "  Health:     ${W}127.0.0.1:${health_port}${N}"
     print_line
+    echo ""
 
     msg_ask "Start service now? [Y/n]: "; read -r ans
-    if [[ "${ans:-y}" == "y" ]]; then
+    if [[ "${ans:-y}" =~ ^[Yy]$ ]]; then
         systemctl restart ${SERVICE_NAME} && sleep 2
-        is_running && msg_ok "Service running!" || msg_err "Failed - check: journalctl -u ${SERVICE_NAME}"
+        is_running && msg_ok "Service running!" || msg_err "Failed — journalctl -u ${SERVICE_NAME} -n 10"
     fi
 }
 
-setup_foreign() {
+# ─── Server Setup (Foreign) ──────────────────────
+setup_server() {
     echo ""
     print_line
-    echo -e "  ${W}FOREIGN SERVER SETUP${N}"
+    echo -e "  ${W}SERVER SETUP (Foreign — accepts Iran connections)${N}"
     print_line
     echo ""
 
@@ -447,38 +461,85 @@ setup_foreign() {
     port=${port:-443}
 
     local password=$(gen_pass)
-    msg_ask "Password [auto-generate]: "; read -r up
-    [ -n "$up" ] && password="$up"
+    msg_ask "Password [auto]: "; read -r user_pass
+    [ -n "$user_pass" ] && password="$user_pass"
 
+    # Transport
     echo ""
-    echo -e "  ${W}Select Transport:${N}"
-    echo -e "    ${C}1)${N} reality     ${D}(recommended)${N}"
-    echo -e "    ${C}2)${N} kcp         ${D}(filtered IPs)${N}"
-    echo -e "    ${C}3)${N} wsmux       ${D}(CDN)${N}"
-    echo -e "    ${C}4)${N} shadowtls   ${D}(no cert)${N}"
-    echo -e "    ${C}5)${N} tcpmux      ${D}(simple)${N}"
-    echo -e "    ${C}6)${N} auto-detect ${D}(test from Iran IP)${N}"
+    echo -e "  ${W}Transport:${N}"
+    echo -e "    ${C}1)${N} reality      ${D}— recommended${N}"
+    echo -e "    ${C}2)${N} shadowtls    ${D}— no cert${N}"
+    echo -e "    ${C}3)${N} wsmux        ${D}— CDN ready${N}"
+    echo -e "    ${C}4)${N} h2mux        ${D}— HTTP/2${N}"
+    echo -e "    ${C}5)${N} grpc         ${D}— gRPC${N}"
+    echo -e "    ${C}6)${N} tcpmux       ${D}— simple${N}"
+    echo -e "    ${C}7)${N} kcp          ${D}— UDP${N}"
+    echo -e "    ${C}8)${N} quic         ${D}— QUIC/UDP${N}"
+    echo ""
     msg_ask "Choice [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="shadowtls";; 5) transport="tcpmux";; 6) msg_ask "Iran server IP: "; read -r iran_ip; test_transport "$iran_ip"; msg_ask "Choose transport [1]: "; read -r tc2; case $tc2 in 2) transport="kcp";; 3) transport="wsmux";; 4) transport="shadowtls";; 5) transport="tcpmux";; *) transport="reality";; esac ;; esac
+    case $tc in
+        2) transport="shadowtls" ;;
+        3) transport="wsmux" ;;
+        4) transport="h2mux" ;;
+        5) transport="grpc" ;;
+        6) transport="tcpmux" ;;
+        7) transport="kcp" ;;
+        8) transport="quic" ;;
+    esac
 
-    # TLS option for tcpmux
+    # TLS for tcpmux
     local tls_section=""
     if [ "$transport" = "tcpmux" ]; then
-        msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
-        if [ "$tls_ans" = "y" ]; then
-            msg_ask "TLS cert path [/etc/ipshadowt/cert.pem]: "; read -r tc_path
-            local tls_cert=${tc_path:-/etc/ipshadowt/cert.pem}
-            msg_ask "TLS key path [/etc/ipshadowt/key.pem]: "; read -r tk_path
-            local tls_key=${tk_path:-/etc/ipshadowt/key.pem}
-            tls_section="tls_cert = \"${tls_cert}\"
-tls_key = \"${tls_key}\""
+        msg_ask "Enable TLS? [y/N]: "; read -r tls_ans
+        if [[ "$tls_ans" =~ ^[Yy]$ ]]; then
+            msg_ask "Cert [/etc/ipshadowt/cert.pem]: "; read -r cp
+            msg_ask "Key [/etc/ipshadowt/key.pem]: "; read -r kp
+            tls_section="tls_cert = \"${cp:-/etc/ipshadowt/cert.pem}\"
+tls_key = \"${kp:-/etc/ipshadowt/key.pem}\""
         fi
     fi
 
+    # REALITY for server
+    local reality_section=""
+    if [ "$transport" = "reality" ]; then
+        echo ""
+        echo -e "  ${W}REALITY Settings:${N}"
+        msg_ask "SNI to mimic [www.google.com]: "; read -r sni
+        sni=${sni:-www.google.com}
+        msg_ask "Fallback dest [www.google.com:443]: "; read -r dest
+        dest=${dest:-www.google.com:443}
+        # Generate keys if binary available
+        if is_installed; then
+            msg_info "Generating REALITY keys..."
+            local keys=$(${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys 2>/dev/null)
+            local priv_key=$(echo "$keys" | grep -i "private" | awk '{print $NF}')
+            local pub_key=$(echo "$keys" | grep -i "public" | awk '{print $NF}')
+            local short_id=$(echo "$keys" | grep -i "short" | awk '{print $NF}')
+            [ -z "$short_id" ] && short_id=$(openssl rand -hex 4)
+            [ -z "$priv_key" ] && { msg_ask "Private key: "; read -r priv_key; }
+            [ -z "$pub_key" ] && { msg_ask "Public key: "; read -r pub_key; }
+        else
+            msg_ask "Private key: "; read -r priv_key
+            msg_ask "Public key: "; read -r pub_key
+            short_id=$(openssl rand -hex 4 2>/dev/null || echo "abcd1234")
+        fi
+        reality_section="
+[reality]
+server_name = \"${sni}\"
+private_key = \"${priv_key}\"
+short_id = \"${short_id}\"
+dest = \"${dest}\""
+        echo ""
+        echo -e "  ${W}Give these to client:${N}"
+        echo -e "    Public Key: ${G}${pub_key}${N}"
+        echo -e "    Short ID:   ${G}${short_id}${N}"
+    fi
+
+    # Write config
     mkdir -p "${CONFIG_DIR}"
     cat > "${CONFIG_DIR}/config.toml" << EOF
-# iPShadowT Server - Generated by Manager
+# iPShadowT Server Config — Generated by Manager v${VERSION}
 mode = "server"
 log_level = "info"
 transport = "${transport}"
@@ -504,251 +565,219 @@ kernel_tuning = true
 [health]
 enabled = true
 listen = "127.0.0.1:9090"
+${reality_section}
 EOF
 
     local server_ip=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || echo "YOUR_IP")
 
     echo ""
     print_line
-    echo -e "  ${G}SERVER READY${N}"
+    echo -e "  ${G}✓ SERVER READY${N}"
     print_line
-    echo -e "  ${W}Give this to your Iran client:${N}"
+    echo -e ""
+    echo -e "  ${W}Share with Iran client:${N}"
+    echo -e "  ┌────────────────────────────────────────┐"
+    echo -e "  │  IP:        ${G}${server_ip}${N}"
+    echo -e "  │  Port:      ${G}${port}${N}"
+    echo -e "  │  Transport: ${G}${transport}${N}"
+    echo -e "  │  Password:  ${G}${password}${N}"
+    [ -n "$tls_section" ] && echo -e "  │  TLS:       ${G}Enabled${N}"
+    echo -e "  └────────────────────────────────────────┘"
     echo ""
-    echo -e "  Server IP:   ${G}${server_ip}${N}"
-    echo -e "  Port:        ${G}${port}${N}"
-    echo -e "  Transport:   ${G}${transport}${N}"
-    echo -e "  Password:    ${G}${password}${N}"
-    [ -n "$tls_section" ] && echo -e "  TLS:         ${G}Enabled${N}"
-    echo -e "  Health:      ${G}127.0.0.1:9090${N}"
-    print_line
 
     msg_ask "Start service now? [Y/n]: "; read -r ans
-    if [[ "${ans:-y}" == "y" ]]; then
+    if [[ "${ans:-y}" =~ ^[Yy]$ ]]; then
         systemctl restart ${SERVICE_NAME} && sleep 2
-        is_running && msg_ok "Service running!" || msg_err "Failed - check: journalctl -u ${SERVICE_NAME}"
+        is_running && msg_ok "Service running!" || msg_err "Failed — journalctl -u ${SERVICE_NAME} -n 10"
     fi
 }
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  EXPORT CONFIG
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export_config() {
+    [ ! -f "${CONFIG_DIR}/config.toml" ] && { msg_err "No config found"; return; }
+    local mode=$(grep '^mode' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+
+    if [ "$mode" = "server" ]; then
+        # Export client config for Iran
+        local server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
+        local port=$(grep '^bind_addr' ${CONFIG_DIR}/config.toml 2>/dev/null | grep -oP ':\K[0-9]+')
+        local password=$(grep '^password' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+        local transport=$(grep '^transport' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+
+        echo ""
+        print_line
+        echo -e "  ${W}CLIENT CONFIG (copy to Iran server):${N}"
+        print_line
+        echo ""
+        echo -e "${G}# iPShadowT Client — copy-paste ready${N}"
+        echo "mode = \"client\""
+        echo "transport = \"${transport}\""
+        echo "remote_addr = \"${server_ip}:${port}\""
+        echo "password = \"${password}\""
+        echo ""
+        echo "[mux]"
+        echo "concurrency = 4"
+        echo ""
+        echo "[heartbeat]"
+        echo "enabled = true"
+        echo "interval = 20"
+        echo "timeout = 40"
+        echo ""
+        echo "[anti_dpi]"
+        echo "enabled = true"
+        echo "utls_fingerprint = \"chrome\""
+        echo "fragment = true"
+        echo ""
+        echo "[[forwards]]"
+        echo "name = \"socks5\""
+        echo "type = \"socks5\""
+        echo "listen = \"0.0.0.0:1080\""
+
+        # Show REALITY keys if applicable
+        if [ "$transport" = "reality" ]; then
+            local pub_key=$(grep 'public_key\|PublicKey' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+            local short_id=$(grep 'short_id' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+            local sni=$(grep 'server_name' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+            echo ""
+            echo "[reality]"
+            echo "server_name = \"${sni:-www.google.com}\""
+            echo "public_key = \"${pub_key}\""
+            echo "short_id = \"${short_id}\""
+        fi
+        print_line
+    else
+        echo ""
+        msg_info "This is a client config. Export is for servers."
+        echo ""
+        cat "${CONFIG_DIR}/config.toml"
+    fi
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  TRANSPORT TEST
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 test_transport() {
     local ip=$1
-    msg_info "Testing connectivity to ${ip}..."
-
+    [ -z "$ip" ] && { msg_err "No IP provided"; return; }
     echo ""
-    echo -e "  ${W}Transport Probe Results:${N}"
+    msg_info "Probing ${ip}..."
     echo ""
 
-    # TCP 443 test
-    local tcp_ok=false
+    local tcp_ok=false udp_ok=false tls_ok=false h2_ok=false
+    local latency="N/A"
+
+    # TCP
     if timeout 5 bash -c "echo >/dev/tcp/${ip}/443" 2>/dev/null; then
-        msg_ok "TCP/443: Reachable"
-        tcp_ok=true
+        msg_ok "TCP/443: Open"; tcp_ok=true
     else
         msg_err "TCP/443: Blocked"
     fi
 
-    # UDP test
-    local udp_ok=false
+    # UDP
     if timeout 3 bash -c "echo >/dev/udp/${ip}/443" 2>/dev/null; then
-        msg_ok "UDP/443: Reachable"
-        udp_ok=true
+        msg_ok "UDP/443: Open"; udp_ok=true
     else
-        msg_warn "UDP/443: Blocked or filtered"
+        msg_warn "UDP/443: Blocked"
     fi
 
-    # TLS handshake test (checks if DPI blocks TLS)
-    local tls_ok=false
-    if timeout 5 openssl s_client -connect "${ip}:443" </dev/null 2>/dev/null | grep -q "CONNECTED"; then
-        msg_ok "TLS Handshake: OK"
-        tls_ok=true
-    else
-        msg_warn "TLS Handshake: Failed (DPI may be active)"
-    fi
-
-    # HTTP/2 test
-    local h2_ok=false
-    if command -v curl &>/dev/null; then
-        if curl -sf --max-time 5 --http2 -o /dev/null "https://${ip}:443" 2>/dev/null; then
-            msg_ok "HTTP/2: Supported"
-            h2_ok=true
+    # TLS
+    if command -v openssl &>/dev/null; then
+        if timeout 5 openssl s_client -connect "${ip}:443" </dev/null 2>/dev/null | grep -q "CONNECTED"; then
+            msg_ok "TLS: Handshake OK"; tls_ok=true
+        else
+            msg_warn "TLS: Handshake failed (DPI active?)"
         fi
     fi
 
-    # Latency test
-    local latency="N/A"
+    # HTTP/2
+    if command -v curl &>/dev/null; then
+        if curl -sf --max-time 5 --http2 -o /dev/null "https://${ip}:443" 2>/dev/null; then
+            msg_ok "HTTP/2: Supported"; h2_ok=true
+        fi
+    fi
+
+    # Latency
     if command -v ping &>/dev/null; then
         latency=$(ping -c 3 -W 3 "$ip" 2>/dev/null | tail -1 | awk -F'/' '{print $5}')
         [ -n "$latency" ] && msg_info "Latency: ${latency}ms"
     fi
 
-    # Smart recommendation
+    # Recommendation
     echo ""
     print_line
-    echo -e "  ${W}Recommendation:${N}"
+    echo -e "  ${W}Recommended transport:${N}"
+    echo ""
     if [ "$tcp_ok" = "true" ] && [ "$tls_ok" = "true" ]; then
-        echo -e "    ${G}1st:${N} reality     ${D}(TLS works, max stealth)${N}"
-        echo -e "    ${G}2nd:${N} shadowtls   ${D}(good fallback)${N}"
-        if [ "$h2_ok" = "true" ]; then
-            echo -e "    ${G}3rd:${N} h2mux       ${D}(HTTP/2 available)${N}"
-        fi
+        echo -e "    ${G}1.${N} reality      ${D}(best — TLS works)${N}"
+        echo -e "    ${G}2.${N} shadowtls    ${D}(fallback)${N}"
+        [ "$h2_ok" = "true" ] && echo -e "    ${G}3.${N} h2mux        ${D}(HTTP/2 OK)${N}"
     elif [ "$tcp_ok" = "true" ]; then
-        echo -e "    ${G}1st:${N} shadowtls   ${D}(TLS blocked, use shadow)${N}"
-        echo -e "    ${G}2nd:${N} tcpmux      ${D}(simple TCP)${N}"
-        echo -e "    ${Y}CDN:${N} wsmux+CDN   ${D}(if direct fails)${N}"
+        echo -e "    ${G}1.${N} shadowtls    ${D}(TLS blocked)${N}"
+        echo -e "    ${G}2.${N} tcpmux       ${D}(raw TCP)${N}"
+        echo -e "    ${Y}3.${N} cdn (wsmux)  ${D}(if direct fails)${N}"
     elif [ "$udp_ok" = "true" ]; then
-        echo -e "    ${G}1st:${N} kcp         ${D}(UDP works, TCP blocked)${N}"
-        echo -e "    ${G}2nd:${N} quic        ${D}(fast UDP)${N}"
+        echo -e "    ${G}1.${N} kcp          ${D}(UDP works)${N}"
+        echo -e "    ${G}2.${N} quic         ${D}(fast UDP)${N}"
     else
         echo -e "    ${R}All direct paths blocked!${N}"
-        echo -e "    ${G}1st:${N} wsmux+CDN   ${D}(route through Cloudflare)${N}"
-        echo -e "    ${Y}Tip:${N} Use CDN mode in setup"
+        echo -e "    ${G}1.${N} cdn (wsmux)  ${D}(via Cloudflare)${N}"
     fi
     print_line
-
-    # Use binary for advanced test if available
-    if is_installed; then
-        echo ""
-        msg_ask "Run advanced transport test with iPShadowT binary? [y/N]: "; read -r adv
-        if [ "$adv" = "y" ]; then
-            ${INSTALL_DIR}/${BINARY_NAME} --test-transport "${ip}:443" 2>/dev/null || msg_warn "Advanced test not available in this version"
-        fi
-    fi
 }
 
-add_port_forward() {
-    echo ""
-    print_line
-    echo -e "  ${W}ADD PORT FORWARD${N}"
-    print_line
-    echo ""
-    echo -e "  ${D}Forward a port from this server through the tunnel to the remote server${N}"
-    echo ""
-
-    # List available tunnels and let user choose
-    echo -e "  ${W}Select tunnel:${N}"
-    local configs=()
-    local i=1
-    for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
-        [ -f "$conf" ] || continue
-        local name=$(basename "$conf" .toml)
-        local remote=$(grep -E '^remote_addr' "$conf" 2>/dev/null | cut -d'"' -f2)
-        echo -e "    ${C}${i})${N} ${name} ${D}(${remote})${N}"
-        configs+=("$conf")
-        i=$((i+1))
-    done
-
-    if [ ${#configs[@]} -eq 0 ]; then
-        msg_err "No tunnels configured"
-        return
-    fi
-
-    echo ""
-    msg_ask "Choice [1]: "; read -r tchoice
-    tchoice=${tchoice:-1}
-    local target_conf="${configs[$((tchoice-1))]}"
-
-    if [ -z "$target_conf" ] || [ ! -f "$target_conf" ]; then
-        msg_err "Invalid choice"
-        return
-    fi
-
-    msg_ask "Name (e.g. vless, ssh, web): "; read -r fname
-    [ -z "$fname" ] && return
-
-    echo ""
-    echo -e "  ${C}1)${N} TCP"
-    echo -e "  ${C}2)${N} UDP"
-    msg_ask "Protocol [1]: "; read -r proto
-    local ftype="tcp"
-    [ "$proto" = "2" ] && ftype="udp"
-
-    msg_ask "Listen port (on THIS server): "; read -r lport
-    [ -z "$lport" ] && return
-
-    msg_ask "Remote port (on FOREIGN server): "; read -r rport
-    [ -z "$rport" ] && return
-
-    # Append to selected config
-    echo "" >> "$target_conf"
-    echo "[[forwards]]" >> "$target_conf"
-    echo "name = \"${fname}\"" >> "$target_conf"
-    echo "type = \"${ftype}\"" >> "$target_conf"
-    echo "listen = \"0.0.0.0:${lport}\"" >> "$target_conf"
-    echo "remote = \"${rport}\"" >> "$target_conf"
-
-    # Determine service name
-    local svc_name="${SERVICE_NAME}"
-    local conf_name=$(basename "$target_conf" .toml)
-    [ "$conf_name" != "config" ] && svc_name="${SERVICE_NAME}-${conf_name#tunnel-}"
-
-    echo ""
-    msg_ok "Port forward added to ${conf_name}: ${ftype} :${lport} -> remote:${rport}"
-    msg_ask "Restart ${svc_name} now? [Y/n]: "; read -r ans
-    if [[ "${ans:-y}" == "y" ]]; then
-        systemctl restart "$svc_name"
-        sleep 2
-        if ss -tuln | grep -q ":${lport} "; then
-            msg_ok "Port ${lport} is now listening!"
-        else
-            msg_err "Port ${lport} not listening. Check: journalctl -u ${svc_name} -n 5"
-        fi
-    fi
-}
-
-# ─── Service Control ──────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  SERVICE CONTROL
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_service() {
     print_banner
     echo -e "  ${W}[ SERVICE CONTROL ]${N}"
     echo ""
 
-    # List all services
-    echo -e "  ${W}Active tunnels:${N}"
+    # List services
+    echo -e "  ${W}Tunnels:${N}"
     local svcs=()
     for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
-        local st="${R}OFF${N}"; systemctl is-active --quiet "$svc" 2>/dev/null && st="${G}ON ${N}"
-        echo -e "    [${st}] ${svc}"
+        local st="${R}●${N}"; systemctl is-active --quiet "$svc" 2>/dev/null && st="${G}●${N}"
+        echo -e "    ${st} ${svc}"
         svcs+=("$svc")
     done
-    [ ${#svcs[@]} -eq 0 ] && msg_warn "No iPShadowT services found"
-
+    [ ${#svcs[@]} -eq 0 ] && msg_warn "No services found"
     echo ""
-    echo -e "  ${C}1)${N} Start ALL tunnels"
-    echo -e "  ${C}2)${N} Stop ALL tunnels"
-    echo -e "  ${C}3)${N} Restart ALL tunnels"
-    echo -e "  ${C}4)${N} Start specific tunnel"
-    echo -e "  ${C}5)${N} Stop specific tunnel"
-    echo -e "  ${C}6)${N} Restart specific tunnel"
-    echo -e "  ${C}7)${N} Enable ALL (start on boot)"
-    echo -e "  ${C}8)${N} Disable ALL"
+
+    echo -e "  ${C}1)${N} Start all"
+    echo -e "  ${C}2)${N} Stop all"
+    echo -e "  ${C}3)${N} Restart all"
+    echo -e "  ${C}4)${N} Start specific"
+    echo -e "  ${C}5)${N} Stop specific"
+    echo -e "  ${C}6)${N} Restart specific"
+    echo -e "  ${C}7)${N} Enable all (boot)"
+    echo -e "  ${C}8)${N} Disable all"
+    echo ""
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r c
     case $c in
-        1) for svc in "${svcs[@]}"; do systemctl start "$svc" 2>/dev/null && msg_ok "Started: $svc"; done ;;
-        2) for svc in "${svcs[@]}"; do systemctl stop "$svc" 2>/dev/null && msg_ok "Stopped: $svc"; done ;;
-        3) for svc in "${svcs[@]}"; do systemctl restart "$svc" 2>/dev/null && msg_ok "Restarted: $svc"; done ;;
-        4)
-            msg_ask "Service name (e.g. ipshadowt, ipshadowt-DE): "; read -r sn
-            systemctl start "$sn" && msg_ok "Started: $sn" || msg_err "Failed"
-            ;;
-        5)
-            msg_ask "Service name: "; read -r sn
-            systemctl stop "$sn" && msg_ok "Stopped: $sn" || msg_err "Failed"
-            ;;
-        6)
-            msg_ask "Service name: "; read -r sn
-            systemctl restart "$sn" && msg_ok "Restarted: $sn" || msg_err "Failed"
-            ;;
-        7) for svc in "${svcs[@]}"; do systemctl enable "$svc" >/dev/null 2>&1 && msg_ok "Enabled: $svc"; done ;;
-        8) for svc in "${svcs[@]}"; do systemctl disable "$svc" >/dev/null 2>&1 && msg_ok "Disabled: $svc"; done ;;
+        1) for s in "${svcs[@]}"; do systemctl start "$s" 2>/dev/null && msg_ok "Started: $s"; done ;;
+        2) for s in "${svcs[@]}"; do systemctl stop "$s" 2>/dev/null && msg_ok "Stopped: $s"; done ;;
+        3) for s in "${svcs[@]}"; do systemctl restart "$s" 2>/dev/null && msg_ok "Restarted: $s"; done ;;
+        4) msg_ask "Service name: "; read -r sn; systemctl start "$sn" && msg_ok "Started" || msg_err "Failed" ;;
+        5) msg_ask "Service name: "; read -r sn; systemctl stop "$sn" && msg_ok "Stopped" || msg_err "Failed" ;;
+        6) msg_ask "Service name: "; read -r sn; systemctl restart "$sn" && msg_ok "Restarted" || msg_err "Failed" ;;
+        7) for s in "${svcs[@]}"; do systemctl enable "$s" >/dev/null 2>&1 && msg_ok "Enabled: $s"; done ;;
+        8) for s in "${svcs[@]}"; do systemctl disable "$s" >/dev/null 2>&1 && msg_ok "Disabled: $s"; done ;;
         0) return ;;
     esac
     press_enter
 }
 
-# ─── Status ───────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  STATUS & MONITORING
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_status() {
     print_banner
-    echo -e "  ${W}[ STATUS ]${N}"
+    echo -e "  ${W}[ STATUS & MONITORING ]${N}"
     echo ""
 
     if ! is_installed; then
@@ -756,228 +785,112 @@ do_status() {
         press_enter; return
     fi
 
-    local ver=$(get_version)
-    echo -e "  Version:    ${W}${ver}${N}"
+    echo -e "  Version: ${W}$(get_version)${N}"
     echo ""
 
-    # ── Multi-tunnel status display ──
+    # Tunnel list
     print_line
-    echo -e "  ${W}TUNNELS:${N}"
+    echo -e "  ${W}TUNNELS${N}"
     echo ""
-    local tunnel_count=0
-    local running_count=0
+    local t_count=0 r_count=0
+    printf "  ${D}%-4s %-12s %-8s %-10s %-26s %s${N}\n" "ST" "NAME" "MODE" "TRANSPORT" "ADDRESS" "FLAGS"
+    echo -e "  ${D}──── ──────────── ──────── ────────── ────────────────────────── ─────${N}"
+
     for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
         [ -f "$conf" ] || continue
-        tunnel_count=$((tunnel_count+1))
+        t_count=$((t_count+1))
         local name=$(basename "$conf" .toml)
         local svc="${SERVICE_NAME}"
         [ "$name" != "config" ] && svc="${SERVICE_NAME}-${name#tunnel-}"
 
-        local st="${R}STOPPED${N}"; 
+        local st="${R}OFF${N}"
         if systemctl is-active --quiet "$svc" 2>/dev/null; then
-            st="${G}RUNNING${N}"
-            running_count=$((running_count+1))
+            st="${G} ON${N}"; r_count=$((r_count+1))
         fi
 
         local mode=$(grep '^mode' "$conf" 2>/dev/null | cut -d'"' -f2)
         local tp=$(grep '^transport' "$conf" 2>/dev/null | cut -d'"' -f2)
         local addr=$(grep -E '^(remote_addr|bind_addr)' "$conf" 2>/dev/null | head -1 | cut -d'"' -f2)
-        local cdn_on=$(grep -E '^\[cdn\]' "$conf" 2>/dev/null)
-        local tls_on=$(grep -E '^tls_cert' "$conf" 2>/dev/null)
-        local health_on=$(grep -E '^\[health\]' "$conf" 2>/dev/null)
 
-        # Build info tags
-        local tags=""
-        [ -n "$cdn_on" ] && tags="${tags}${C}CDN${N} "
-        [ -n "$tls_on" ] && tags="${tags}${Y}TLS${N} "
-        [ -n "$health_on" ] && tags="${tags}${G}WD${N} "
+        local flags=""
+        grep -q '^\[cdn\]' "$conf" 2>/dev/null && flags="${flags}CDN "
+        grep -q '^tls_cert' "$conf" 2>/dev/null && flags="${flags}TLS "
+        grep -q '^\[health\]' "$conf" 2>/dev/null && flags="${flags}WD "
 
-        printf "  [${st}] %-12s %-8s %-10s %-25s %s\n" "$name" "$mode" "$tp" "$addr" "$tags"
-
-        # Show SOCKS5 ports for this tunnel
-        local socks_ports=$(grep -A1 'type = "socks5"' "$conf" 2>/dev/null | grep 'listen' | cut -d'"' -f2 | tr '\n' ' ')
-        [ -n "$socks_ports" ] && echo -e "              ${D}SOCKS5: ${socks_ports}${N}"
-
-        # Show uptime if running
-        if systemctl is-active --quiet "$svc" 2>/dev/null; then
-            local uptime=$(systemctl show "$svc" --property=ActiveEnterTimestamp 2>/dev/null | cut -d'=' -f2)
-            [ -n "$uptime" ] && echo -e "              ${D}Since: ${uptime}${N}"
-        fi
+        printf "  [${st}] %-12s %-8s %-10s %-26s ${C}%s${N}\n" "$name" "$mode" "$tp" "$addr" "$flags"
     done
 
-    if [ $tunnel_count -eq 0 ]; then
-        msg_warn "No tunnels configured"
-    else
-        echo ""
-        print_line
-        echo -e "  Total: ${W}${tunnel_count}${N} tunnels | Running: ${G}${running_count}${N} | Stopped: ${R}$((tunnel_count - running_count))${N}"
-    fi
+    [ $t_count -eq 0 ] && msg_warn "No tunnels configured"
+    echo ""
+    echo -e "  Total: ${W}${t_count}${N}  Running: ${G}${r_count}${N}  Stopped: ${R}$((t_count-r_count))${N}"
+    print_line
 
     # System info
     echo ""
-    print_line
     local pub_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "N/A")
     local mem=$(free -m 2>/dev/null | awk '/Mem:/{printf "%d/%dMB (%d%%)", $3, $2, $3*100/$2}')
     local cpu=$(nproc 2>/dev/null || echo "?")
     local load=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
     local disk=$(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2" ("$5")"}')
 
-    echo -e "  Public IP:  ${W}${pub_ip}${N}"
-    echo -e "  Memory:     ${mem}"
-    echo -e "  CPU:        ${cpu} cores (load: ${load})"
-    echo -e "  Disk:       ${disk}"
-    print_line
-
+    echo -e "  ${D}System:${N}"
+    echo -e "    IP:     ${W}${pub_ip}${N}"
+    echo -e "    Memory: ${mem}"
+    echo -e "    CPU:    ${cpu} cores (load: ${load})"
+    echo -e "    Disk:   ${disk}"
     echo ""
-    echo -e "  ${C}1)${N} View logs (main service)"
+
+    echo -e "  ${C}1)${N} View logs (last 30 lines)"
     echo -e "  ${C}2)${N} View logs (specific tunnel)"
-    echo -e "  ${C}3)${N} Live logs (Ctrl+C to exit)"
-    echo -e "  ${C}4)${N} Health check all tunnels"
+    echo -e "  ${C}3)${N} Live logs (follow)"
+    echo -e "  ${C}4)${N} Health check all"
     echo -e "  ${C}5)${N} Speed test"
+    echo ""
     echo -e "  ${C}0)${N} Back"
+    echo ""
     msg_ask "Choice: "; read -r c
     case $c in
-        1) journalctl -u ${SERVICE_NAME} --no-pager -n 30 ;;
-        2)
-            msg_ask "Tunnel name (e.g. DE, config): "; read -r tn
-            local svc_name="${SERVICE_NAME}"
-            [ "$tn" != "config" ] && svc_name="${SERVICE_NAME}-${tn}"
-            journalctl -u "$svc_name" --no-pager -n 30
-            ;;
-        3)
-            msg_ask "Tunnel name (empty=main): "; read -r tn
-            local svc_name="${SERVICE_NAME}"
-            [ -n "$tn" ] && [ "$tn" != "config" ] && svc_name="${SERVICE_NAME}-${tn}"
-            journalctl -u "$svc_name" -f
-            ;;
-        4)
-            echo ""
-            for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
-                [ -f "$conf" ] || continue
-                local name=$(basename "$conf" .toml)
-                local hp=$(grep '^listen' "$conf" 2>/dev/null | grep -v '0.0.0.0' | head -1 | cut -d'"' -f2)
-                if [ -n "$hp" ]; then
-                    if curl -sf "http://${hp}/health" >/dev/null 2>&1; then
-                        msg_ok "${name}: healthy"
-                    else
-                        msg_err "${name}: unreachable"
-                    fi
-                else
-                    local svc="${SERVICE_NAME}"
-                    [ "$name" != "config" ] && svc="${SERVICE_NAME}-${name#tunnel-}"
-                    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-                        msg_ok "${name}: running (no health endpoint)"
-                    else
-                        msg_err "${name}: stopped"
-                    fi
-                fi
-            done
-            ;;
-        5) msg_info "Testing..."; local s=$(curl -so /dev/null -w '%{speed_download}' http://speedtest.tele2.net/1MB.zip 2>/dev/null); echo -e "  Download: $(echo $s | awk '{printf "%.2f Mbps", $1/131072}')"; ;;
+        1) echo ""; journalctl -u ${SERVICE_NAME} --no-pager -n 30 ;;
+        2) msg_ask "Tunnel name: "; read -r tn
+           local sn="${SERVICE_NAME}"; [ -n "$tn" ] && [ "$tn" != "config" ] && sn="${SERVICE_NAME}-${tn}"
+           journalctl -u "$sn" --no-pager -n 30 ;;
+        3) msg_ask "Tunnel (empty=main): "; read -r tn
+           local sn="${SERVICE_NAME}"; [ -n "$tn" ] && [ "$tn" != "config" ] && sn="${SERVICE_NAME}-${tn}"
+           journalctl -u "$sn" -f ;;
+        4) echo ""
+           for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
+               [ -f "$conf" ] || continue
+               local name=$(basename "$conf" .toml)
+               local svc="${SERVICE_NAME}"; [ "$name" != "config" ] && svc="${SERVICE_NAME}-${name#tunnel-}"
+               if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                   msg_ok "${name}: running"
+               else
+                   msg_err "${name}: stopped"
+               fi
+           done ;;
+        5) msg_info "Testing download speed..."
+           local spd=$(curl -so /dev/null -w '%{speed_download}' http://speedtest.tele2.net/1MB.zip 2>/dev/null)
+           echo -e "  Download: $(echo $spd | awk '{printf "%.2f Mbps", $1/131072}')" ;;
         0) return ;;
     esac
     press_enter
 }
 
-# ─── Keys ─────────────────────────────────────────
-do_keys() {
-    print_banner
-    echo -e "  ${W}[ KEY MANAGEMENT ]${N}"
-    echo ""
-    echo -e "  ${C}1)${N} Generate REALITY keys"
-    echo -e "  ${C}2)${N} Generate random password"
-    echo -e "  ${C}3)${N} Export client config"
-    echo -e "  ${C}0)${N} Back"
-    echo ""
-    msg_ask "Choice: "; read -r c
-    case $c in
-        1) is_installed && ${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys || msg_err "Not installed" ;;
-        2) echo ""; msg_ok "Password: $(gen_pass)"; echo "" ;;
-        3) export_config ;;
-        0) return ;;
-    esac
-    press_enter
-}
-
-export_config() {
-    [ ! -f "${CONFIG_DIR}/config.toml" ] && { msg_err "No config"; return; }
-    local server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
-    local port=$(grep '^bind_addr' ${CONFIG_DIR}/config.toml 2>/dev/null | grep -oP ':\K[0-9]+')
-    local password=$(grep '^password' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
-    local transport=$(grep '^transport' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
-    echo ""
-    print_line
-    echo -e "  ${W}CLIENT CONFIG (copy to Iran server):${N}"
-    print_line
-    echo ""
-    echo "mode = \"client\""
-    echo "transport = \"${transport}\""
-    echo "remote_addr = \"${server_ip}:${port}\""
-    echo "password = \"${password}\""
-    echo ""
-    echo "[mux]"
-    echo "concurrency = 4"
-    echo ""
-    echo "[anti_dpi]"
-    echo "enabled = true"
-    echo "utls_fingerprint = \"chrome\""
-    echo "fragment = true"
-    echo ""
-    echo "[[forwards]]"
-    echo "name = \"socks5\""
-    echo "type = \"socks5\""
-    echo "listen = \"0.0.0.0:1080\""
-    print_line
-}
-
-# ─── Backup ───────────────────────────────────────
-do_backup() {
-    print_banner
-    echo -e "  ${W}[ BACKUP / RESTORE ]${N}"
-    echo ""
-    echo -e "  ${C}1)${N} Create backup now"
-    echo -e "  ${C}2)${N} List backups"
-    echo -e "  ${C}3)${N} Restore from backup"
-    echo -e "  ${C}4)${N} Setup auto-backup (cron)"
-    echo -e "  ${C}0)${N} Back"
-    echo ""
-    msg_ask "Choice: "; read -r c
-    case $c in
-        1)
-            mkdir -p "${BACKUP_DIR}"
-            local ts=$(date +%Y%m%d-%H%M%S)
-            tar -czf "${BACKUP_DIR}/backup-${ts}.tar.gz" -C "${CONFIG_DIR}" --exclude=backups . 2>/dev/null
-            msg_ok "Backup: ${BACKUP_DIR}/backup-${ts}.tar.gz"
-            ;;
-        2)
-            echo ""; ls -lh ${BACKUP_DIR}/*.tar.gz 2>/dev/null || msg_warn "No backups"
-            ;;
-        3)
-            msg_ask "Backup file path: "; read -r bf
-            [ -f "$bf" ] && { tar -xzf "$bf" -C "${CONFIG_DIR}"; msg_ok "Restored"; } || msg_err "Not found"
-            ;;
-        4)
-            (crontab -l 2>/dev/null | grep -v "ipshadowt"; echo "0 */12 * * * tar -czf ${BACKUP_DIR}/auto-\$(date +\%Y\%m\%d).tar.gz -C ${CONFIG_DIR} --exclude=backups . 2>/dev/null") | crontab -
-            msg_ok "Auto-backup: every 12 hours"
-            ;;
-        0) return ;;
-    esac
-    press_enter
-}
-
-# ─── Multi-Tunnel ─────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  MULTI-TUNNEL
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_multi() {
     print_banner
     echo -e "  ${W}[ MULTI-TUNNEL MANAGER ]${N}"
-    echo ""
     echo -e "  ${D}Manage multiple tunnels to different servers${N}"
     echo ""
     echo -e "  ${C}1)${N} List all tunnels"
-    echo -e "  ${C}2)${N} Add tunnel: Multiple Foreign -> This Iran Server"
-    echo -e "  ${C}3)${N} Add tunnel: This Foreign -> Multiple Iran Servers"
+    echo -e "  ${C}2)${N} Add client tunnel  ${D}(Iran → Foreign)${N}"
+    echo -e "  ${C}3)${N} Add server tunnel  ${D}(Foreign ← Iran)${N}"
     echo -e "  ${C}4)${N} Remove tunnel"
     echo -e "  ${C}5)${N} Restart all tunnels"
     echo -e "  ${C}6)${N} Stop all tunnels"
+    echo ""
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r c
@@ -986,96 +899,76 @@ do_multi() {
         2) add_client_tunnel ;;
         3) add_server_tunnel ;;
         4) remove_tunnel ;;
-        5) restart_all_tunnels ;;
-        6) stop_all_tunnels ;;
+        5) for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+               systemctl restart "$svc" 2>/dev/null && msg_ok "Restarted: $svc"
+           done ;;
+        6) for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+               systemctl stop "$svc" 2>/dev/null && msg_ok "Stopped: $svc"
+           done ;;
         0) return ;;
     esac
     press_enter
 }
 
-# Add client tunnel (Iran connects to a foreign server)
+list_tunnels() {
+    echo ""
+    printf "  ${D}%-4s %-15s %-12s %s${N}\n" "ST" "NAME" "TRANSPORT" "ADDRESS"
+    echo -e "  ${D}──── ─────────────── ──────────── ──────────────────────────────${N}"
+    for conf in ${CONFIG_DIR}/tunnel-*.toml ${CONFIG_DIR}/config.toml; do
+        [ -f "$conf" ] || continue
+        local name=$(basename "$conf" .toml)
+        local svc="${SERVICE_NAME}"; [ "$name" != "config" ] && svc="${SERVICE_NAME}-${name#tunnel-}"
+        local st="${R}OFF${N}"; systemctl is-active --quiet "$svc" 2>/dev/null && st="${G} ON${N}"
+        local tp=$(grep '^transport' "$conf" 2>/dev/null | cut -d'"' -f2)
+        local addr=$(grep -E '^(remote_addr|bind_addr)' "$conf" 2>/dev/null | head -1 | cut -d'"' -f2)
+        printf "  [${st}] %-15s %-12s %s\n" "$name" "$tp" "$addr"
+    done
+}
+
 add_client_tunnel() {
     echo ""
-    print_line
-    echo -e "  ${W}ADD CLIENT TUNNEL (Iran -> Foreign)${N}"
-    print_line
-    echo ""
-
     msg_ask "Tunnel name (e.g. DE, TR, US): "; read -r tname
     [ -z "$tname" ] && return
     tname=$(echo "$tname" | tr -cd 'a-zA-Z0-9_-')
 
-    msg_ask "Foreign server IP: "; read -r ip
-    [ -z "$ip" ] && return
-
-    msg_ask "Tunnel port (on foreign server): "; read -r port
-    [ -z "$port" ] && return
-
-    msg_ask "Password: "; read -r pass
-    [ -z "$pass" ] && pass=$(gen_pass)
+    msg_ask "Foreign server IP: "; read -r ip; [ -z "$ip" ] && return
+    msg_ask "Port [443]: "; read -r port; port=${port:-443}
+    msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
     echo ""
-    echo -e "  ${C}1)${N}reality ${C}2)${N}kcp ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}shadowtls ${C}6)${N}cdn"
-    msg_ask "Transport [4]: "; read -r tc
-    local transport="tcpmux"
-    case $tc in 1) transport="reality";; 2) transport="kcp";; 3) transport="wsmux";; 5) transport="shadowtls";; 6) transport="wsmux";; esac
+    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}kcp ${C}6)${N}quic ${C}7)${N}cdn"
+    msg_ask "Transport [1]: "; read -r tc
+    local transport="reality"
+    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="tcpmux";; 5) transport="kcp";; 6) transport="quic";; 7) transport="wsmux";; esac
 
-    # CDN mode for multi-tunnel
+    # CDN
     local cdn_section=""
-    if [ "$tc" = "6" ]; then
-        echo ""
-        msg_ask "CDN domain (e.g. your-domain.com): "; read -r cdn_domain
-        [ -z "$cdn_domain" ] && { msg_err "CDN domain required"; return; }
-        ip="$cdn_domain"
-        port="443"
-        echo -e "  ${C}1)${N}cloudflare ${C}2)${N}gcore ${C}3)${N}arvan ${C}4)${N}custom"
-        msg_ask "CDN Provider [1]: "; read -r cp
-        local cdn_provider="cloudflare"
-        case $cp in 2) cdn_provider="gcore";; 3) cdn_provider="arvan";; 4) cdn_provider="custom";; esac
+    if [ "$tc" = "7" ]; then
+        msg_ask "CDN domain: "; read -r cdn_domain
+        [ -z "$cdn_domain" ] && { msg_err "Required"; return; }
+        ip="$cdn_domain"; port="443"
         cdn_section="
 [cdn]
 enabled = true
-provider = \"${cdn_provider}\"
+provider = \"cloudflare\"
 domain = \"${cdn_domain}\"
 path = \"/tunnel\"
-tls = true
-early_data = true"
+tls = true"
     fi
 
-    # TLS option for tcpmux
-    local tls_section=""
-    if [ "$transport" = "tcpmux" ] && [ "$tc" != "6" ]; then
-        msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
-        if [ "$tls_ans" = "y" ]; then
-            msg_ask "TLS cert path [/etc/ipshadowt/cert.pem]: "; read -r tc_path
-            local tls_cert=${tc_path:-/etc/ipshadowt/cert.pem}
-            msg_ask "TLS key path [/etc/ipshadowt/key.pem]: "; read -r tk_path
-            local tls_key=${tk_path:-/etc/ipshadowt/key.pem}
-            tls_section="tls_cert = \"${tls_cert}\"
-tls_key = \"${tls_key}\""
-        fi
-    fi
+    # SOCKS5 port auto-detect
+    local sp=1080
+    while ss -tuln 2>/dev/null | grep -q ":${sp} "; do sp=$((sp+1)); done
+    msg_ask "SOCKS5 port [${sp}]: "; read -r usp; sp=${usp:-$sp}
 
-    # Auto-detect next SOCKS5 port
-    local last_socks=$(grep -rh 'type = "socks5"' ${CONFIG_DIR}/*.toml 2>/dev/null | wc -l)
-    local sp=$((1080 + last_socks))
-    # Check if port is in use, increment if needed
-    while ss -tuln 2>/dev/null | grep -q ":${sp} "; do
-        sp=$((sp + 1))
-    done
-    msg_ask "SOCKS5 port [${sp}]: "; read -r usp
-    sp=${usp:-$sp}
-
-    # Ask for port forwards
-    echo ""
-    msg_ask "Port forwards (comma-separated, e.g. 443,8443,2059) or empty: "; read -r ports_input
-    local forwards=""
+    # Port forwards
+    msg_ask "Extra port forwards (comma-sep, e.g. 443,8443) or empty: "; read -r ports_input
+    local fwd_section=""
     if [ -n "$ports_input" ]; then
         IFS=',' read -ra PORTS <<< "$ports_input"
         for p in "${PORTS[@]}"; do
-            p=$(echo "$p" | tr -d ' ')
-            [ -z "$p" ] && continue
-            forwards="${forwards}
+            p=$(echo "$p" | tr -d ' '); [ -z "$p" ] && continue
+            fwd_section="${fwd_section}
 [[forwards]]
 name = \"fwd-${p}\"
 type = \"tcp\"
@@ -1086,16 +979,13 @@ remote = \"${p}\"
     fi
 
     local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
-    mkdir -p "${CONFIG_DIR}"
     cat > "$cf" << EOF
-# iPShadowT Client Tunnel - ${tname}
-# Remote: ${ip}:${port}
+# iPShadowT Client Tunnel — ${tname}
 mode = "client"
 log_level = "info"
 transport = "${transport}"
 remote_addr = "${ip}:${port}"
 password = "${pass}"
-${tls_section}
 
 [mux]
 concurrency = 4
@@ -1119,20 +1009,22 @@ listen = "127.0.0.1:0"
 name = "socks5-${tname}"
 type = "socks5"
 listen = "0.0.0.0:${sp}"
-${forwards}
+${fwd_section}
 EOF
 
+    # Service
     local svc="${SERVICE_NAME}-${tname}"
     cat > "/etc/systemd/system/${svc}.service" << EOF
 [Unit]
-Description=iPShadowT - ${tname} (${ip}:${port})
+Description=iPShadowT — ${tname} (${ip}:${port})
 After=network.target
 [Service]
 Type=simple
 ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${cf}
 Restart=always
-RestartSec=5
-LimitNOFILE=65535
+RestartSec=3
+LimitNOFILE=1048576
+WatchdogSec=60
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -1140,63 +1032,31 @@ EOF
     systemctl enable "$svc" >/dev/null 2>&1
     systemctl start "$svc"
     sleep 3
-
-    if systemctl is-active --quiet "$svc"; then
-        msg_ok "Tunnel '${tname}' active! (SOCKS5 :${sp})"
-    else
-        msg_err "Failed. Check: journalctl -u ${svc} -n 5"
-    fi
+    systemctl is-active --quiet "$svc" && msg_ok "Tunnel '${tname}' active (SOCKS5 :${sp})" || msg_err "Failed — journalctl -u ${svc} -n 5"
 }
 
-# Add server tunnel (Foreign listens for Iran connections)
 add_server_tunnel() {
     echo ""
-    print_line
-    echo -e "  ${W}ADD SERVER TUNNEL (Foreign listens for Iran)${N}"
-    print_line
-    echo ""
-
     msg_ask "Tunnel name (e.g. iran1, iran2): "; read -r tname
     [ -z "$tname" ] && return
     tname=$(echo "$tname" | tr -cd 'a-zA-Z0-9_-')
 
-    msg_ask "Listen port: "; read -r port
-    [ -z "$port" ] && return
+    msg_ask "Listen port: "; read -r port; [ -z "$port" ] && return
+    msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
-    msg_ask "Password: "; read -r pass
-    [ -z "$pass" ] && pass=$(gen_pass)
-
-    echo ""
-    echo -e "  ${C}1)${N}reality ${C}2)${N}kcp ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}shadowtls"
-    msg_ask "Transport [4]: "; read -r tc
-    local transport="tcpmux"
-    case $tc in 1) transport="reality";; 2) transport="kcp";; 3) transport="wsmux";; 5) transport="shadowtls";; esac
-
-    # TLS option for tcpmux
-    local tls_section=""
-    if [ "$transport" = "tcpmux" ]; then
-        msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
-        if [ "$tls_ans" = "y" ]; then
-            msg_ask "TLS cert path [/etc/ipshadowt/cert.pem]: "; read -r tc_path
-            local tls_cert=${tc_path:-/etc/ipshadowt/cert.pem}
-            msg_ask "TLS key path [/etc/ipshadowt/key.pem]: "; read -r tk_path
-            local tls_key=${tk_path:-/etc/ipshadowt/key.pem}
-            tls_section="tls_cert = \"${tls_cert}\"
-tls_key = \"${tls_key}\""
-        fi
-    fi
+    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}tcpmux ${C}5)${N}kcp ${C}6)${N}quic"
+    msg_ask "Transport [1]: "; read -r tc
+    local transport="reality"
+    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="tcpmux";; 5) transport="kcp";; 6) transport="quic";; esac
 
     local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
-    mkdir -p "${CONFIG_DIR}"
     cat > "$cf" << EOF
-# iPShadowT Server Tunnel - ${tname}
-# Listens on port ${port}
+# iPShadowT Server Tunnel — ${tname}
 mode = "server"
 log_level = "info"
 transport = "${transport}"
 bind_addr = "0.0.0.0:${port}"
 password = "${pass}"
-${tls_section}
 
 [mux]
 concurrency = 8
@@ -1220,14 +1080,14 @@ EOF
     local svc="${SERVICE_NAME}-${tname}"
     cat > "/etc/systemd/system/${svc}.service" << EOF
 [Unit]
-Description=iPShadowT Server - ${tname} (:${port})
+Description=iPShadowT Server — ${tname} (:${port})
 After=network.target
 [Service]
 Type=simple
 ExecStart=${INSTALL_DIR}/${BINARY_NAME} -c ${cf}
 Restart=always
-RestartSec=5
-LimitNOFILE=65535
+RestartSec=3
+LimitNOFILE=1048576
 WatchdogSec=60
 [Install]
 WantedBy=multi-user.target
@@ -1236,55 +1096,18 @@ EOF
     systemctl enable "$svc" >/dev/null 2>&1
     systemctl start "$svc"
     sleep 2
-
     if systemctl is-active --quiet "$svc"; then
-        local server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
-        msg_ok "Server tunnel '${tname}' active on port ${port}!"
-        echo ""
-        echo -e "  ${W}Give to Iran client:${N}"
-        echo -e "    IP: ${server_ip}"
-        echo -e "    Port: ${port}"
-        echo -e "    Password: ${pass}"
-        echo -e "    Transport: ${transport}"
-        [ -n "$tls_section" ] && echo -e "    TLS: Enabled"
+        local sip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
+        msg_ok "Server tunnel '${tname}' active on :${port}"
+        echo -e "  ${D}Share: IP=${sip} Port=${port} Pass=${pass} Transport=${transport}${N}"
     else
-        msg_err "Failed. Check: journalctl -u ${svc} -n 5"
+        msg_err "Failed — journalctl -u ${svc} -n 5"
     fi
-}
-
-stop_all_tunnels() {
-    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
-        systemctl stop "$svc" 2>/dev/null && msg_ok "Stopped: $svc"
-    done
-}
-
-restart_all_tunnels() {
-    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
-        systemctl restart "$svc" 2>/dev/null && msg_ok "Restarted: $svc"
-    done
-}
-
-list_tunnels() {
-    echo ""
-    print_line
-    local found=0
-    for conf in ${CONFIG_DIR}/tunnel-*.toml ${CONFIG_DIR}/config.toml; do
-        [ -f "$conf" ] || continue
-        found=$((found+1))
-        local name=$(basename "$conf" .toml)
-        local svc="${SERVICE_NAME}"
-        [ "$name" != "config" ] && svc="${SERVICE_NAME}-${name#tunnel-}"
-        local st="${R}OFF${N}"; systemctl is-active --quiet "$svc" 2>/dev/null && st="${G}ON ${N}"
-        local tp=$(grep '^transport' "$conf" 2>/dev/null | cut -d'"' -f2)
-        local addr=$(grep -E '^(remote_addr|bind_addr)' "$conf" 2>/dev/null | head -1 | cut -d'"' -f2)
-        printf "  [${st}] %-15s %-12s %s\n" "$name" "$tp" "$addr"
-    done
-    [ $found -eq 0 ] && msg_warn "No tunnels configured"
-    print_line
 }
 
 remove_tunnel() {
     list_tunnels
+    echo ""
     msg_ask "Tunnel name to remove: "; read -r tname
     [ -z "$tname" ] && return
     local svc="${SERVICE_NAME}-${tname}"
@@ -1296,21 +1119,105 @@ remove_tunnel() {
     msg_ok "Tunnel '${tname}' removed"
 }
 
-# ─── Update ───────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  PORT FORWARD
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+add_port_forward() {
+    echo ""
+    echo -e "  ${W}Select tunnel to add forward:${N}"
+    local configs=(); local i=1
+    for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
+        [ -f "$conf" ] || continue
+        local name=$(basename "$conf" .toml)
+        local addr=$(grep -E '^(remote_addr|bind_addr)' "$conf" 2>/dev/null | head -1 | cut -d'"' -f2)
+        echo -e "    ${C}${i})${N} ${name} ${D}(${addr})${N}"
+        configs+=("$conf"); i=$((i+1))
+    done
+    [ ${#configs[@]} -eq 0 ] && { msg_err "No tunnels"; return; }
+
+    echo ""
+    msg_ask "Choice [1]: "; read -r tc; tc=${tc:-1}
+    local target="${configs[$((tc-1))]}"
+    [ -z "$target" ] || [ ! -f "$target" ] && { msg_err "Invalid"; return; }
+
+    msg_ask "Forward name: "; read -r fname; [ -z "$fname" ] && return
+    echo -e "  ${C}1)${N} TCP  ${C}2)${N} UDP"
+    msg_ask "Protocol [1]: "; read -r proto
+    local ftype="tcp"; [ "$proto" = "2" ] && ftype="udp"
+    msg_ask "Listen port (this server): "; read -r lport; [ -z "$lport" ] && return
+    msg_ask "Remote port (foreign): "; read -r rport; [ -z "$rport" ] && return
+
+    cat >> "$target" << EOF
+
+[[forwards]]
+name = "${fname}"
+type = "${ftype}"
+listen = "0.0.0.0:${lport}"
+remote = "${rport}"
+EOF
+
+    local svc_name="${SERVICE_NAME}"
+    local cname=$(basename "$target" .toml)
+    [ "$cname" != "config" ] && svc_name="${SERVICE_NAME}-${cname#tunnel-}"
+
+    msg_ok "Added: ${ftype} :${lport} → remote:${rport}"
+    msg_ask "Restart ${svc_name}? [Y/n]: "; read -r ans
+    [[ "${ans:-y}" =~ ^[Yy]$ ]] && systemctl restart "$svc_name" && sleep 2 && msg_ok "Restarted"
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  BACKUP / RESTORE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+do_backup() {
+    print_banner
+    echo -e "  ${W}[ BACKUP & RESTORE ]${N}"
+    echo ""
+    echo -e "  ${C}1)${N} Create backup now"
+    echo -e "  ${C}2)${N} List backups"
+    echo -e "  ${C}3)${N} Restore from backup"
+    echo -e "  ${C}4)${N} Setup auto-backup (cron)"
+    echo ""
+    echo -e "  ${C}0)${N} Back"
+    echo ""
+    msg_ask "Choice: "; read -r c
+    case $c in
+        1) mkdir -p "${BACKUP_DIR}"
+           local ts=$(date +%Y%m%d-%H%M%S)
+           tar -czf "${BACKUP_DIR}/backup-${ts}.tar.gz" -C "${CONFIG_DIR}" --exclude=backups . 2>/dev/null
+           msg_ok "Backup: ${BACKUP_DIR}/backup-${ts}.tar.gz" ;;
+        2) echo ""; ls -lh ${BACKUP_DIR}/*.tar.gz 2>/dev/null || msg_warn "No backups" ;;
+        3) msg_ask "Backup file path: "; read -r bf
+           [ -f "$bf" ] && { tar -xzf "$bf" -C "${CONFIG_DIR}"; msg_ok "Restored"; } || msg_err "Not found" ;;
+        4) (crontab -l 2>/dev/null | grep -v "ipshadowt"; echo "0 */6 * * * tar -czf ${BACKUP_DIR}/auto-\$(date +\%Y\%m\%d-\%H).tar.gz -C ${CONFIG_DIR} --exclude=backups . 2>/dev/null") | crontab -
+           msg_ok "Auto-backup: every 6 hours" ;;
+        0) return ;;
+    esac
+    press_enter
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  UPDATE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_update() {
     print_banner
     echo -e "  ${W}[ UPDATE ]${N}"
     echo ""
-    echo -e "  ${C}1)${N} Update binary (download latest from GitHub)"
-    echo -e "  ${C}2)${N} Update manager script"
-    echo -e "  ${C}3)${N} Remove binary only (keep configs)"
+    echo -e "  ${C}1)${N} Update binary (latest release)"
+    echo -e "  ${C}2)${N} Update this script"
+    echo -e "  ${C}3)${N} Check for updates"
+    echo ""
     echo -e "  ${C}0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r c
     case $c in
         1) update_binary ;;
-        2) update_script ;;
-        3) remove_binary ;;
+        2) msg_info "Downloading latest script..."
+           curl -fsSL -o "$0" "https://raw.githubusercontent.com/${GITHUB_REPO}/master/deploy/ipshadowt-manager.sh" && msg_ok "Updated! Re-run: bash $0" || msg_err "Failed" ;;
+        3) local cur=$(get_version)
+           local latest=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
+           echo -e "  Current: ${W}${cur}${N}"
+           echo -e "  Latest:  ${W}${latest:-unknown}${N}"
+           [ "$cur" = "$latest" ] && msg_ok "Up to date!" || msg_warn "Update available" ;;
         0) return ;;
     esac
     press_enter
@@ -1322,18 +1229,19 @@ update_binary() {
     msg_info "Checking GitHub..."
     local latest=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
     [ -z "$latest" ] && { msg_err "Cannot reach GitHub"; return; }
-    [ "$cur" = "$latest" ] && { msg_ok "Already up to date (${cur})"; return; }
-    msg_ok "New version: ${latest}"
-    msg_ask "Update? [Y/n]: "; read -r ans
-    if [[ "${ans:-y}" == "y" ]]; then
-        # Stop all services
+    [ "$cur" = "$latest" ] && { msg_ok "Already latest (${cur})"; return; }
+    msg_info "New version: ${latest}"
+    msg_ask "Update now? [Y/n]: "; read -r ans
+    if [[ "${ans:-y}" =~ ^[Yy]$ ]]; then
+        # Stop services
         for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
             systemctl stop "$svc" 2>/dev/null
         done
+        # Download
         detect_arch
-        local url="https://github.com/${GITHUB_REPO}/releases/latest/download/${BINARY_NAME}-${OS}-${ARCH}"
+        local url="https://github.com/${GITHUB_REPO}/releases/download/${latest}/${BINARY_NAME}-${OS}-${ARCH}"
         curl -fSL --progress-bar -o "${INSTALL_DIR}/${BINARY_NAME}" "$url" && chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-        # Start all services
+        # Start services
         for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
             systemctl start "$svc" 2>/dev/null
         done
@@ -1341,67 +1249,63 @@ update_binary() {
     fi
 }
 
-update_script() {
-    msg_info "Downloading latest manager script..."
-    local url="https://raw.githubusercontent.com/${GITHUB_REPO}/master/deploy/ipshadowt-manager.sh"
-    curl -fsSL -o "/root/ipshadowt-manager.sh" "$url" && msg_ok "Script updated! Run: bash ipshadowt-manager.sh" || msg_err "Download failed"
-}
-
-remove_binary() {
-    msg_warn "This removes the binary but keeps configs and services."
-    msg_ask "Continue? [y/N]: "; read -r ans
-    [ "$ans" != "y" ] && return
-    # Stop all
-    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
-        systemctl stop "$svc" 2>/dev/null
-    done
-    rm -f "${INSTALL_DIR}/${BINARY_NAME}"
-    msg_ok "Binary removed. Configs still in ${CONFIG_DIR}"
-}
-
-# ─── Uninstall ────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  UNINSTALL
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 do_uninstall() {
     echo ""
     msg_warn "This will completely remove iPShadowT."
     msg_ask "Continue? [y/N]: "; read -r ans
     [ "$ans" != "y" ] && return
-    systemctl stop ${SERVICE_NAME} 2>/dev/null || true
-    systemctl disable ${SERVICE_NAME} 2>/dev/null || true
-    rm -f "${SERVICE_FILE}" "${INSTALL_DIR}/${BINARY_NAME}" "${SYSCTL_FILE}"
-    # Remove multi-tunnel services
-    for f in /etc/systemd/system/${SERVICE_NAME}-*.service; do
-        [ -f "$f" ] && rm -f "$f"
+
+    # Stop all
+    for svc in $(systemctl list-units --type=service --all 2>/dev/null | grep ipshadowt | awk '{print $1}'); do
+        systemctl stop "$svc" 2>/dev/null
+        systemctl disable "$svc" 2>/dev/null
     done
+
+    # Remove files
+    rm -f "${INSTALL_DIR}/${BINARY_NAME}"
+    rm -f "${SERVICE_FILE}"
+    rm -f "${SYSCTL_FILE}"
+    rm -f /etc/systemd/system/${SERVICE_NAME}-*.service
     systemctl daemon-reload
-    msg_ask "Remove config? [y/N]: "; read -r rc
+
+    msg_ask "Remove configs too? [y/N]: "; read -r rc
     [ "$rc" = "y" ] && rm -rf "${CONFIG_DIR}"
+
     msg_ok "iPShadowT removed"
+    press_enter
 }
 
-# ─── Main Menu ────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  MAIN MENU
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 main_menu() {
     while true; do
         print_banner
 
-        # Quick status line
+        # Quick status
         if is_installed; then
             local st="${R}Stopped${N}"; is_running && st="${G}Running${N}"
-            echo -e "  Status: [${st}]  Version: ${W}$(get_version)${N}"
+            local tunnels=$(count_tunnels)
+            local running=$(count_running)
+            echo -e "  Status: [${st}]  Version: ${W}$(get_version)${N}  Tunnels: ${W}${running}/${tunnels}${N}"
         else
-            echo -e "  Status: ${D}Not installed${N}"
+            echo -e "  ${D}iPShadowT is not installed${N}"
         fi
         echo ""
         print_line
         echo ""
-        echo -e "  ${C} 1)${N}  Install iPShadowT"
+        echo -e "  ${C} 1)${N}  Install / Reinstall"
         echo -e "  ${C} 2)${N}  Configure Tunnel"
-        echo -e "  ${C} 3)${N}  Start / Stop / Restart"
+        echo -e "  ${C} 3)${N}  Service Control"
         echo -e "  ${C} 4)${N}  Status & Monitoring"
-        echo -e "  ${C} 5)${N}  Key Management"
-        echo -e "  ${C} 6)${N}  Backup / Restore"
-        echo -e "  ${C} 7)${N}  Multi-Tunnel Manager"
-        echo -e "  ${C} 8)${N}  Update"
-        echo -e "  ${C} 9)${N}  Uninstall"
+        echo -e "  ${C} 5)${N}  Multi-Tunnel Manager"
+        echo -e "  ${C} 6)${N}  Backup & Restore"
+        echo -e "  ${C} 7)${N}  Update"
+        echo -e "  ${C} 8)${N}  Uninstall"
+        echo ""
         echo -e "  ${C} 0)${N}  Exit"
         echo ""
         print_line
@@ -1413,19 +1317,19 @@ main_menu() {
             2) do_configure ;;
             3) do_service ;;
             4) do_status ;;
-            5) do_keys ;;
+            5) do_multi ;;
             6) do_backup ;;
-            7) do_multi ;;
-            8) do_update ;;
-            9) do_uninstall; press_enter ;;
+            7) do_update ;;
+            8) do_uninstall ;;
             0) echo ""; msg_ok "Goodbye!"; echo ""; exit 0 ;;
             *) msg_err "Invalid option" ;;
         esac
     done
 }
 
-# ─── Entry ────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  ENTRY POINT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 check_root
 detect_arch
-detect_os_type
 main_menu
