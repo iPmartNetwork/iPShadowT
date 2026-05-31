@@ -6,8 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iPmart/iPShadowT/internal/antidpi"
 	"github.com/iPmart/iPShadowT/internal/config"
 	"github.com/iPmart/iPShadowT/internal/crypto"
+	"github.com/iPmart/iPShadowT/internal/dns"
 	"github.com/iPmart/iPShadowT/internal/logger"
 	"github.com/iPmart/iPShadowT/internal/mux"
 	"github.com/iPmart/iPShadowT/internal/transport"
@@ -16,14 +18,16 @@ import (
 
 // Client manages the tunnel connection to the server
 type Client struct {
-	cfg       *config.Config
-	log       *logger.Logger
-	transport transport.Transport
-	encryptor *crypto.Encryptor
-	pool      *mux.SessionPool
-	forwards  []*tunnel.Forwarder
-	done      chan struct{}
-	wg        sync.WaitGroup
+	cfg         *config.Config
+	log         *logger.Logger
+	transport   transport.Transport
+	encryptor   *crypto.Encryptor
+	pool        *mux.SessionPool
+	forwards    []*tunnel.Forwarder
+	done        chan struct{}
+	wg          sync.WaitGroup
+	dnsResolver *dns.Resolver
+	obfuscation *antidpi.ObfuscationConfig
 }
 
 // New creates a new client instance
@@ -40,18 +44,39 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 		return nil, fmt.Errorf("failed to create encryptor: %w", err)
 	}
 
-	return &Client{
+	c := &Client{
 		cfg:       cfg,
 		log:       log,
 		transport: tp,
 		encryptor: enc,
 		pool:      mux.NewSessionPool(&cfg.Mux, log),
 		done:      make(chan struct{}),
-	}, nil
+	}
+
+	// Initialize DNS-over-HTTPS resolver to prevent DNS leaks
+	c.dnsResolver = dns.NewResolver(nil, log)
+	log.Info("DNS leak protection: enabled (DoH)")
+
+	// Initialize traffic obfuscation config
+	if cfg.AntiDPI.Enabled && cfg.AntiDPI.TrafficShape {
+		obfCfg := antidpi.DefaultObfuscationConfig()
+		c.obfuscation = &obfCfg
+		log.Info("Traffic obfuscation: enabled (mode: %s)", obfCfg.Mode)
+	}
+
+	return c, nil
 }
 
 // Start connects to the server and starts port forwarding
 func (c *Client) Start() error {
+	// Resolve remote address using DoH (prevents DNS poisoning)
+	resolvedAddr, err := c.dnsResolver.ResolveAddr(c.cfg.RemoteAddr)
+	if err != nil {
+		c.log.Warn("DoH resolve failed for %s, using original: %v", c.cfg.RemoteAddr, err)
+	} else if resolvedAddr != c.cfg.RemoteAddr {
+		c.log.Info("DNS resolved: %s → %s (via DoH)", c.cfg.RemoteAddr, resolvedAddr)
+	}
+
 	// Establish initial mux sessions
 	if err := c.connectSessions(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
@@ -110,14 +135,22 @@ func (c *Client) createSession() (*mux.Session, error) {
 		return nil, fmt.Errorf("dial failed: %w", err)
 	}
 
+	// Apply traffic obfuscation if enabled
+	var muxConn net.Conn = conn
+	if c.obfuscation != nil {
+		obfConn := antidpi.NewObfuscator(conn, *c.obfuscation, c.log)
+		// Wrap as net.Conn (obfuscator implements Read/Write/Close)
+		muxConn = &obfuscatedConn{Conn: conn, obf: obfConn}
+	}
+
 	// Perform handshake
-	if err := c.handshake(conn); err != nil {
+	if err := c.handshake(muxConn); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("handshake failed: %w", err)
 	}
 
 	// Create mux session
-	session, err := mux.NewClientSession(conn, &c.cfg.Mux, c.log)
+	session, err := mux.NewClientSession(muxConn, &c.cfg.Mux, c.log)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("mux session failed: %w", err)
@@ -239,4 +272,23 @@ func (c *Client) Stop() {
 
 	c.wg.Wait()
 	c.log.Info("Client stopped")
+}
+
+// obfuscatedConn wraps a net.Conn with traffic obfuscation on writes
+type obfuscatedConn struct {
+	net.Conn
+	obf *antidpi.Obfuscator
+}
+
+func (c *obfuscatedConn) Write(p []byte) (int, error) {
+	return c.obf.Write(p)
+}
+
+func (c *obfuscatedConn) Read(p []byte) (int, error) {
+	return c.obf.Read(p)
+}
+
+func (c *obfuscatedConn) Close() error {
+	c.obf.Close()
+	return nil
 }

@@ -1,27 +1,42 @@
 package transport
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net"
+	"sync"
 	"time"
+
+	"github.com/quic-go/quic-go"
 
 	"github.com/iPmart/iPShadowT/internal/config"
 	"github.com/iPmart/iPShadowT/internal/logger"
 )
 
-// QUICTransport implements Transport using QUIC protocol
-// QUIC advantages:
-// - Built-in multiplexing (no head-of-line blocking)
-// - 0-RTT connection establishment
-// - Better performance on lossy networks
-// - UDP-based (faster than TCP in many cases)
+// QUICTransport implements Transport using the QUIC protocol (via quic-go)
 //
-// Note: QUIC/UDP may be blocked during severe filtering events
-// Use as primary when available, with TCP fallback
+// QUIC advantages over TCP:
+// - Built-in multiplexing with no head-of-line blocking
+// - 0-RTT connection establishment (faster reconnects)
+// - Better performance on lossy/mobile networks
+// - Connection migration (survives IP changes)
+// - UDP-based (avoids TCP-specific DPI signatures)
+//
+// Note: UDP may be blocked during severe filtering.
+// Use with TCP fallback via multi-path failover.
 type QUICTransport struct {
 	cfg      *config.Config
 	log      *logger.Logger
-	listener interface{} // quic.Listener
+	listener *quic.Listener
+	mu       sync.Mutex
 }
 
 // NewQUIC creates a new QUIC transport
@@ -38,175 +53,208 @@ func (q *QUICTransport) Name() string {
 }
 
 // Dial connects to the server using QUIC
-// Note: This is a stub that uses TCP fallback when quic-go is not available
-// To enable full QUIC, add github.com/quic-go/quic-go to go.mod
 func (q *QUICTransport) Dial() (net.Conn, error) {
-	// QUIC connection using UDP
-	// For now, we implement a UDP-based connection wrapper
-	// Full QUIC requires quic-go library
-
-	addr, err := net.ResolveUDPAddr("udp", q.cfg.RemoteAddr)
-	if err != nil {
-		return nil, fmt.Errorf("resolve UDP addr failed: %w", err)
+	tlsConf := &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"ipshadowt-quic"},
 	}
 
-	udpConn, err := net.DialUDP("udp", nil, addr)
-	if err != nil {
-		return nil, fmt.Errorf("UDP dial failed: %w", err)
+	quicConf := &quic.Config{
+		MaxIdleTimeout:  60 * time.Second,
+		KeepAlivePeriod: 15 * time.Second,
+		Allow0RTT:       true,
 	}
 
-	// Wrap with TLS-like encryption (our own AEAD layer handles this)
-	q.log.Debug("QUIC connected to %s (UDP)", q.cfg.RemoteAddr)
-	return udpConn, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	conn, err := quic.DialAddr(ctx, q.cfg.RemoteAddr, tlsConf, quicConf)
+	if err != nil {
+		return nil, fmt.Errorf("QUIC dial to %s failed: %w", q.cfg.RemoteAddr, err)
+	}
+
+	// Open a single bidirectional stream for the mux layer
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		conn.CloseWithError(1, "stream open failed")
+		return nil, fmt.Errorf("QUIC stream open failed: %w", err)
+	}
+
+	q.log.Debug("QUIC connected to %s", q.cfg.RemoteAddr)
+	return &quicStreamConn{
+		stream: stream,
+		conn:   conn,
+		local:  conn.LocalAddr(),
+		remote: conn.RemoteAddr(),
+	}, nil
 }
 
 // Listen starts accepting QUIC connections
 func (q *QUICTransport) Listen() (net.Listener, error) {
-	addr := q.cfg.BindAddr
+	tlsConf := &tls.Config{
+		NextProtos: []string{"ipshadowt-quic"},
+	}
 
-	// Create UDP listener
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	// Load or generate TLS certificate
+	if q.cfg.TLSCert != "" && q.cfg.TLSKey != "" {
+		cert, err := tls.LoadX509KeyPair(q.cfg.TLSCert, q.cfg.TLSKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS cert: %w", err)
+		}
+		tlsConf.Certificates = []tls.Certificate{cert}
+	} else {
+		cert, err := generateQUICSelfSignedCert()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate TLS cert for QUIC: %w", err)
+		}
+		tlsConf.Certificates = []tls.Certificate{cert}
+	}
+
+	quicConf := &quic.Config{
+		MaxIdleTimeout:  60 * time.Second,
+		KeepAlivePeriod: 15 * time.Second,
+		Allow0RTT:       true,
+	}
+
+	listener, err := quic.ListenAddr(q.cfg.BindAddr, tlsConf, quicConf)
 	if err != nil {
-		return nil, fmt.Errorf("resolve UDP addr failed: %w", err)
+		return nil, fmt.Errorf("QUIC listen on %s failed: %w", q.cfg.BindAddr, err)
 	}
 
-	udpConn, err := net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		return nil, fmt.Errorf("UDP listen failed: %w", err)
-	}
+	q.mu.Lock()
+	q.listener = listener
+	q.mu.Unlock()
 
-	quicListener := &QUICListener{
-		udpConn: udpConn,
-		connCh:  make(chan net.Conn, 256),
-		done:    make(chan struct{}),
-		addr:    addr,
-		log:     q.log,
-	}
+	q.log.Info("QUIC transport listening on %s (UDP)", q.cfg.BindAddr)
 
-	go quicListener.acceptLoop()
-
-	q.log.Info("QUIC transport listening on %s (UDP)", addr)
-	return quicListener, nil
+	return &quicNetListener{
+		listener: listener,
+		log:      q.log,
+		done:     make(chan struct{}),
+	}, nil
 }
 
 // Close shuts down the transport
 func (q *QUICTransport) Close() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.listener != nil {
+		return q.listener.Close()
+	}
 	return nil
 }
 
-// QUICListener implements net.Listener for QUIC/UDP
-type QUICListener struct {
-	udpConn *net.UDPConn
-	connCh  chan net.Conn
-	done    chan struct{}
-	addr    string
-	log     *logger.Logger
-	clients map[string]*UDPSession
+// quicNetListener wraps quic.Listener as net.Listener
+type quicNetListener struct {
+	listener *quic.Listener
+	log      *logger.Logger
+	done     chan struct{}
 }
 
-// UDPSession represents a UDP client session
-type UDPSession struct {
-	remoteAddr *net.UDPAddr
-	conn       *net.UDPConn
-	lastSeen   time.Time
-}
-
-func (l *QUICListener) acceptLoop() {
-	buf := make([]byte, 65535)
-	l.clients = make(map[string]*UDPSession)
-
-	for {
-		select {
-		case <-l.done:
-			return
-		default:
-		}
-
-		l.udpConn.SetReadDeadline(time.Now().Add(1 * time.Second))
-		n, remoteAddr, err := l.udpConn.ReadFromUDP(buf)
-		if err != nil {
-			continue
-		}
-
-		key := remoteAddr.String()
-		if _, exists := l.clients[key]; !exists {
-			// New client - create session
-			session := &UDPSession{
-				remoteAddr: remoteAddr,
-				conn:       l.udpConn,
-				lastSeen:   time.Now(),
-			}
-			l.clients[key] = session
-
-			// Create a net.Conn wrapper
-			udpNetConn := &UDPNetConn{
-				session: session,
-				buf:     make([]byte, n),
-			}
-			copy(udpNetConn.buf, buf[:n])
-
-			select {
-			case l.connCh <- udpNetConn:
-			case <-l.done:
-				return
-			}
-		}
-	}
-}
-
-func (l *QUICListener) Accept() (net.Conn, error) {
-	select {
-	case conn := <-l.connCh:
-		return conn, nil
-	case <-l.done:
-		return nil, fmt.Errorf("listener closed")
-	}
-}
-
-func (l *QUICListener) Close() error {
-	close(l.done)
-	return l.udpConn.Close()
-}
-
-func (l *QUICListener) Addr() net.Addr {
-	return l.udpConn.LocalAddr()
-}
-
-// UDPNetConn wraps a UDP session as net.Conn
-type UDPNetConn struct {
-	session *UDPSession
-	buf     []byte
-	pos     int
-}
-
-func (c *UDPNetConn) Read(p []byte) (int, error) {
-	if c.pos < len(c.buf) {
-		n := copy(p, c.buf[c.pos:])
-		c.pos += n
-		return n, nil
-	}
-	// Read more from UDP
-	buf := make([]byte, 65535)
-	c.session.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-	n, _, err := c.session.conn.ReadFromUDP(buf)
+func (l *quicNetListener) Accept() (net.Conn, error) {
+	ctx := context.Background()
+	conn, err := l.listener.Accept(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	copied := copy(p, buf[:n])
-	if copied < n {
-		c.buf = buf[copied:n]
-		c.pos = 0
+
+	// Accept a stream from the client
+	stream, err := conn.AcceptStream(ctx)
+	if err != nil {
+		conn.CloseWithError(1, "stream accept failed")
+		return nil, fmt.Errorf("QUIC accept stream failed: %w", err)
 	}
-	return copied, nil
+
+	l.log.Debug("QUIC connection accepted from %s", conn.RemoteAddr())
+	return &quicStreamConn{
+		stream: stream,
+		conn:   conn,
+		local:  conn.LocalAddr(),
+		remote: conn.RemoteAddr(),
+	}, nil
 }
 
-func (c *UDPNetConn) Write(p []byte) (int, error) {
-	return c.session.conn.WriteToUDP(p, c.session.remoteAddr)
+func (l *quicNetListener) Close() error {
+	close(l.done)
+	return l.listener.Close()
 }
 
-func (c *UDPNetConn) Close() error                       { return nil }
-func (c *UDPNetConn) LocalAddr() net.Addr                { return c.session.conn.LocalAddr() }
-func (c *UDPNetConn) RemoteAddr() net.Addr               { return c.session.remoteAddr }
-func (c *UDPNetConn) SetDeadline(t time.Time) error      { return nil }
-func (c *UDPNetConn) SetReadDeadline(t time.Time) error  { return nil }
-func (c *UDPNetConn) SetWriteDeadline(t time.Time) error { return nil }
+func (l *quicNetListener) Addr() net.Addr {
+	return l.listener.Addr()
+}
+
+// quicStreamConn wraps a QUIC stream as net.Conn
+type quicStreamConn struct {
+	stream *quic.Stream
+	conn   *quic.Conn
+	local  net.Addr
+	remote net.Addr
+}
+
+func (c *quicStreamConn) Read(p []byte) (int, error) {
+	return c.stream.Read(p)
+}
+
+func (c *quicStreamConn) Write(p []byte) (int, error) {
+	return c.stream.Write(p)
+}
+
+func (c *quicStreamConn) Close() error {
+	c.stream.Close()
+	c.conn.CloseWithError(0, "closed")
+	return nil
+}
+
+func (c *quicStreamConn) LocalAddr() net.Addr  { return c.local }
+func (c *quicStreamConn) RemoteAddr() net.Addr { return c.remote }
+
+func (c *quicStreamConn) SetDeadline(t time.Time) error {
+	c.stream.SetDeadline(t)
+	return nil
+}
+
+func (c *quicStreamConn) SetReadDeadline(t time.Time) error {
+	c.stream.SetReadDeadline(t)
+	return nil
+}
+
+func (c *quicStreamConn) SetWriteDeadline(t time.Time) error {
+	c.stream.SetWriteDeadline(t)
+	return nil
+}
+
+// generateQUICSelfSignedCert creates a self-signed TLS certificate for QUIC
+func generateQUICSelfSignedCert() (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("generate key: %w", err)
+	}
+
+	serialNumber, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"iPShadowT QUIC"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("create cert: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("marshal key: %w", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return tls.X509KeyPair(certPEM, keyPEM)
+}

@@ -44,6 +44,12 @@ type Config struct {
 	// Multi-Path (client only)
 	Paths []PathConfig `toml:"paths"`
 
+	// Health / Watchdog
+	Health HealthConfig `toml:"health"`
+
+	// CDN
+	CDN CDNModeConfig `toml:"cdn"`
+
 	// REALITY specific
 	Reality RealityConfig `toml:"reality"`
 }
@@ -118,6 +124,22 @@ type RealityConfig struct {
 	PublicKey  string   `toml:"public_key"`
 	PrivateKey string   `toml:"private_key"`
 	Dest       string   `toml:"dest"`        // Fallback destination for probes
+}
+
+// HealthConfig configures the health/watchdog endpoint
+type HealthConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Listen  string `toml:"listen"` // e.g. "127.0.0.1:9090"
+}
+
+// CDNModeConfig configures CDN routing
+type CDNModeConfig struct {
+	Enabled   bool   `toml:"enabled"`
+	Provider  string `toml:"provider"`   // "cloudflare", "gcore", "arvan", "custom"
+	Domain    string `toml:"domain"`     // CDN domain
+	Path      string `toml:"path"`       // WebSocket path
+	TLS       bool   `toml:"tls"`        // Use TLS
+	EarlyData bool   `toml:"early_data"` // 0-RTT early data
 }
 
 // Load reads and parses a TOML config file

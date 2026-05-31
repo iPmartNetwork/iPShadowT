@@ -55,6 +55,9 @@ type Options struct {
 	// Performance
 	Nodelay      bool
 	KernelTuning bool
+
+	// Multi-Path / Failover
+	Paths []config.PathConfig
 }
 
 // ForwardOption represents a port forward configuration
@@ -182,6 +185,11 @@ func WithKernelTuning(enabled bool) Option {
 	return func(o *Options) { o.KernelTuning = enabled }
 }
 
+// WithFailover configures multi-path failover
+func WithFailover(paths []config.PathConfig) Option {
+	return func(o *Options) { o.Paths = paths }
+}
+
 // buildConfig converts Options to internal Config
 func (o *Options) buildConfig() (*config.Config, error) {
 	// If config file is specified, load from file
@@ -279,6 +287,11 @@ func (o *Options) buildConfig() (*config.Config, error) {
 	cfg.Heartbeat.Enabled = true
 	cfg.Heartbeat.Interval = 20
 	cfg.Heartbeat.Timeout = 40
+
+	// Multi-Path / Failover
+	if len(o.Paths) > 0 {
+		cfg.Paths = o.Paths
+	}
 
 	return cfg, nil
 }

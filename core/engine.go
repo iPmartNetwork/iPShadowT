@@ -34,7 +34,7 @@ import (
 )
 
 // Version is the engine version
-const Version = "v1.0.0"
+const Version = "v2.0.0"
 
 // Author is the project author
 const Author = "iPmart Network (Ali Hassanzadeh)"
@@ -84,6 +84,7 @@ type Engine struct {
 	server    *server.Server
 	client    *client.Client
 	events    *EventBus
+	failover  *Failover
 	lastError error
 }
 
@@ -142,6 +143,11 @@ func (e *Engine) Start() error {
 		return err
 	}
 
+	// Initialize auto-failover if multi-path is configured
+	if e.cfg.Mode == "client" && len(e.cfg.Paths) > 1 {
+		e.initFailover()
+	}
+
 	e.state = StateRunning
 	e.events.Emit(EventStarted, nil)
 	return nil
@@ -158,6 +164,11 @@ func (e *Engine) Stop() error {
 
 	e.state = StateStopping
 	e.events.Emit(EventStopping, nil)
+
+	// Stop failover first
+	if e.failover != nil {
+		e.failover.Stop()
+	}
 
 	if e.server != nil {
 		e.server.Stop()
@@ -230,4 +241,70 @@ func (e *Engine) startClient() error {
 	e.client = cli
 	e.log.Info("🟢 Client connected to %s (transport: %s)", e.cfg.RemoteAddr, e.cfg.Transport)
 	return nil
+}
+
+// initFailover sets up auto-failover for multi-path configurations
+func (e *Engine) initFailover() {
+	fcfg := DefaultFailoverConfig()
+	fo := NewFailover(e.cfg.Paths, fcfg, e.log, e.events)
+
+	// Register switch callback: reconnect client with new path
+	fo.OnSwitch(func(from, to config.PathConfig) error {
+		e.log.Info("Auto-failover: reconnecting via %q (%s @ %s)",
+			to.Name, to.Transport, to.RemoteAddr)
+
+		// Update config for the new path
+		e.cfg.RemoteAddr = to.RemoteAddr
+		if to.Transport != "" {
+			e.cfg.Transport = to.Transport
+		}
+
+		// Stop current client
+		if e.client != nil {
+			e.client.Stop()
+		}
+
+		// Create and start new client with updated config
+		cli, err := client.New(e.cfg, e.log)
+		if err != nil {
+			return fmt.Errorf("failover: failed to create client for path %q: %w", to.Name, err)
+		}
+
+		if err := cli.Start(); err != nil {
+			return fmt.Errorf("failover: failed to start client for path %q: %w", to.Name, err)
+		}
+
+		e.client = cli
+		e.events.Emit(EventReconnecting, map[string]string{
+			"path":      to.Name,
+			"transport": to.Transport,
+			"remote":    to.RemoteAddr,
+		})
+		return nil
+	})
+
+	fo.Start()
+	e.failover = fo
+	e.log.Info("Auto-failover: initialized with %d paths", len(e.cfg.Paths))
+}
+
+// GetFailover returns the failover manager (nil if not configured)
+func (e *Engine) GetFailover() *Failover {
+	return e.failover
+}
+
+// ReportConnectionFailure reports a failure to the failover manager
+// Returns true if failover was triggered
+func (e *Engine) ReportConnectionFailure(err error) bool {
+	if e.failover == nil {
+		return false
+	}
+	return e.failover.ReportFailure(err)
+}
+
+// ReportConnectionSuccess reports a successful connection to the failover manager
+func (e *Engine) ReportConnectionSuccess() {
+	if e.failover != nil {
+		e.failover.ReportSuccess()
+	}
 }

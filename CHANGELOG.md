@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-05-31
+
+### 🚀 Major Release — Full Integration
+
+#### Added
+- **QUIC Transport** — Full implementation with `quic-go` (0-RTT, connection migration, UDP mux)
+- **Traffic Obfuscation** — 4 modes: HTTPS mimic, Video mimic, Random burst, Constant rate
+- **DNS Leak Protection** — Automatic DoH resolver integrated in client
+- **Auto-Failover** — Multi-path with priority/round-robin/latency strategies + auto-recovery
+- **CDN Mode in Script** — Full CDN setup wizard (Cloudflare, Gcore, Arvan, Custom)
+- **TLS for tcpmux** — Optional TLS encryption for tcpmux transport
+- **Watchdog/Health** — Systemd WatchdogSec + HTTP health endpoint
+- **Adaptive Connection Pool** — Auto-scaling with warmup and usage-based sizing
+- **Split Tunneling** — Rule-based routing with Iran IP bypass (200+ CIDRs)
+- **Cluster Mode** — Multi-server with geographic routing and state sync
+- **Config Sync** — Encrypted push/pull between servers
+- **Plugin System** — Transport/Auth/Filter plugins with hook system
+- **Graceful Upgrade** — Zero-downtime binary upgrades
+- **Real-time Dashboard** — WebSocket-based with traffic charts
+- **Prometheus + Grafana** — Docker Compose monitoring stack with alert rules
+- **Smart Transport Detection** — TCP/UDP/TLS/H2 probing with recommendations
+
+#### Integrated (Server)
+- Rate limiter (per-user bandwidth control)
+- Security manager (IP blacklist, brute-force protection, audit log)
+- Plugin filters on every connection
+- Metrics tracking (connections, streams, bytes) with Prometheus endpoint
+- Health service tracking
+
+#### Integrated (Client)
+- DNS-over-HTTPS resolver (prevents DNS poisoning)
+- Traffic obfuscation wrapper on sessions
+- Failover manager in engine
+
+#### Changed
+- Version bumped to v2.0.0
+- Go version requirement: 1.25+
+- Deploy script version: 2.0.0
+- Added macOS and ARM builds to CI
+- Docker image now includes health check
+- Build workflow uses matrix strategy
+
+---
+
 ## [1.0.0] - 2026-05-29
 
 ### 🎉 Initial Release
@@ -109,12 +153,11 @@ First public release of iPShadowT — Anti-DPI Multi-Transport Tunnel Engine.
 ## [Unreleased]
 
 ### Planned
-- Full QUIC implementation with quic-go
 - Android/iOS client (gomobile)
 - Desktop GUI (Wails)
 - Telegram bot for management
-- Cluster mode with shared state
 - WireGuard integration as inner protocol
+- Full E2E test suite
 
 ---
 

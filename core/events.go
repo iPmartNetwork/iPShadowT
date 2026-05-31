@@ -1,6 +1,9 @@
 package core
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // EventType represents the type of engine event
 type EventType string
@@ -17,6 +20,7 @@ const (
 	EventPathChanged  EventType = "path_changed"
 	EventProbeBlocked EventType = "probe_blocked"
 	EventTraffic      EventType = "traffic"
+	EventFailover     EventType = "failover"
 )
 
 // EventHandler is a callback function for events
@@ -72,4 +76,12 @@ type ConnectionEvent struct {
 	RemoteAddr string
 	Transport  string
 	UserID     string
+}
+
+// FailoverEvent holds failover switch info
+type FailoverEvent struct {
+	FromPath  string
+	ToPath    string
+	Reason    string
+	Timestamp time.Time
 }

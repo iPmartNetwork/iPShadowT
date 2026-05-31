@@ -1,0 +1,65 @@
+# iPShadowT Alert Rules for Prometheus
+groups:
+  - name: ipshadowt_alerts
+    rules:
+      - alert: TunnelDown
+        expr: up{job="ipshadowt"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "iPShadowT tunnel is down"
+          description: "Instance {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: HighConnectionFailures
+        expr: rate(ipshadowt_connections_failed[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High connection failure rate"
+          description: "More than 5 connection failures per second on {{ $labels.instance }}."
+
+      - alert: HighLatency
+        expr: ipshadowt_path_latency_ms > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High tunnel latency"
+          description: "Latency on {{ $labels.instance }} exceeds 500ms."
+
+      - alert: PathFailover
+        expr: increase(ipshadowt_path_failovers[5m]) > 0
+        labels:
+          severity: info
+        annotations:
+          summary: "Path failover occurred"
+          description: "A path failover was triggered on {{ $labels.instance }}."
+
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Less than 10% disk space remaining."
+
+      - alert: HighMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage exceeds 90%."
+
+      - alert: ProbeDetected
+        expr: increase(ipshadowt_probes_detected[5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DPI probes detected"
+          description: "Multiple DPI probes detected on {{ $labels.instance }}."

@@ -17,19 +17,34 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
 
       - name: Download dependencies
         run: go mod tidy
 
+      - name: Run tests
+        run: go test ./...
+
       - name: Build Linux AMD64
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)'" -o ipshadowt-linux-amd64 ./cmd/ipshadowt/
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)' -X main.BuildTime=$(date -u +%Y%m%d%H%M%S)" -o ipshadowt-linux-amd64 ./cmd/ipshadowt/
 
       - name: Build Linux ARM64
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)'" -o ipshadowt-linux-arm64 ./cmd/ipshadowt/
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)' -X main.BuildTime=$(date -u +%Y%m%d%H%M%S)" -o ipshadowt-linux-arm64 ./cmd/ipshadowt/
+
+      - name: Build Linux ARM (v7)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)'" -o ipshadowt-linux-arm ./cmd/ipshadowt/
 
       - name: Build Windows AMD64
         run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)'" -o ipshadowt-windows-amd64.exe ./cmd/ipshadowt/
+
+      - name: Build macOS AMD64
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)'" -o ipshadowt-darwin-amd64 ./cmd/ipshadowt/
+
+      - name: Build macOS ARM64 (Apple Silicon)
+        run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X 'main.Author=iPmart Network (Ali Hassanzadeh)'" -o ipshadowt-darwin-arm64 ./cmd/ipshadowt/
+
+      - name: Generate checksums
+        run: sha256sum ipshadowt-* > checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -37,5 +52,11 @@ jobs:
           files: |
             ipshadowt-linux-amd64
             ipshadowt-linux-arm64
+            ipshadowt-linux-arm
             ipshadowt-windows-amd64.exe
+            ipshadowt-darwin-amd64
+            ipshadowt-darwin-arm64
+            checksums.txt
+            deploy/ipshadowt-manager.sh
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
