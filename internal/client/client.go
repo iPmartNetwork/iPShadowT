@@ -12,6 +12,7 @@ import (
 	"github.com/iPmart/iPShadowT/internal/dns"
 	"github.com/iPmart/iPShadowT/internal/logger"
 	"github.com/iPmart/iPShadowT/internal/mux"
+	"github.com/iPmart/iPShadowT/internal/stability"
 	"github.com/iPmart/iPShadowT/internal/transport"
 	"github.com/iPmart/iPShadowT/internal/tunnel"
 )
@@ -28,6 +29,13 @@ type Client struct {
 	wg          sync.WaitGroup
 	dnsResolver *dns.Resolver
 	obfuscation *antidpi.ObfuscationConfig
+
+	// Stability modules
+	heartbeat   *stability.Heartbeat
+	reconnector *stability.Reconnector
+	quality     *stability.QualityMonitor
+	dpiDetect   *stability.DPIDetector
+	bufferTuner *stability.BufferTuner
 }
 
 // New creates a new client instance
@@ -64,6 +72,44 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 		log.Info("Traffic obfuscation: enabled (mode: %s)", obfCfg.Mode)
 	}
 
+	// Initialize stability modules
+	c.heartbeat = stability.NewHeartbeat(stability.HeartbeatConfig{
+		Interval:  5 * time.Second,
+		Timeout:   10 * time.Second,
+		MaxMissed: 3,
+		OnDead: func(sessionID int) {
+			log.Warn("Session %d declared dead by heartbeat", sessionID)
+			c.reconnector.Trigger()
+		},
+	}, log)
+
+	c.quality = stability.NewQualityMonitor(stability.QualityConfig{
+		CheckInterval: 5 * time.Second,
+		MaxLatency:    500 * time.Millisecond,
+		MaxJitter:     200 * time.Millisecond,
+		MaxPacketLoss: 0.1,
+		DegradeCallback: func(sessionID int, reason string) {
+			log.Warn("Session %d quality degraded: %s", sessionID, reason)
+		},
+	}, log)
+
+	c.reconnector = stability.NewReconnector(stability.DefaultReconnectConfig(), log)
+	c.reconnector.SetConnectFunc(func() error {
+		session, err := c.createSession()
+		if err != nil {
+			return err
+		}
+		c.pool.Add(session)
+		return nil
+	})
+
+	c.dpiDetect = stability.NewDPIDetector(log, func(pattern stability.DPIPattern) {
+		recommended := c.dpiDetect.GetRecommendation()
+		log.Warn("DPI pattern %s detected, recommended transport: %s", pattern, recommended)
+	})
+
+	c.bufferTuner = stability.NewBufferTuner(stability.BufferConfig{}, log)
+
 	return c, nil
 }
 
@@ -90,6 +136,10 @@ func (c *Client) Start() error {
 	// Start session maintenance (reconnect, health check)
 	c.wg.Add(1)
 	go c.maintainSessions()
+
+	// Start stability modules
+	c.heartbeat.Start()
+	c.quality.Start()
 
 	return nil
 }
@@ -230,6 +280,8 @@ func (c *Client) checkAndReconnect() {
 	removed := c.pool.RemoveClosed()
 	if removed > 0 {
 		c.log.Warn("Removed %d dead sessions", removed)
+		// Record failure for DPI detection
+		c.dpiDetect.RecordFailure(c.cfg.Transport, fmt.Errorf("session closed unexpectedly"), 0)
 	}
 
 	// Check if we need more sessions
@@ -244,13 +296,25 @@ func (c *Client) checkAndReconnect() {
 		c.log.Info("Reconnecting %d sessions (active: %d, target: %d)", needed, active, target)
 
 		for i := 0; i < needed; i++ {
+			start := time.Now()
 			session, err := c.createSession()
 			if err != nil {
 				c.log.Error("Reconnect failed: %v", err)
+				// Record for DPI analysis
+				c.dpiDetect.RecordFailure(c.cfg.Transport, err, time.Since(start))
 				continue
 			}
 			c.pool.Add(session)
-			c.log.Info("✅ Session reconnected (%d/%d)", active+i+1, target)
+
+			// Update buffer tuner with connection RTT
+			rtt := time.Since(start)
+			c.bufferTuner.UpdateMetrics(1048576, rtt) // Assume 1MB/s initially
+			c.log.Info("✅ Session reconnected (%d/%d, RTT: %v)", active+i+1, target, rtt)
+		}
+
+		// If still no sessions, trigger reconnector with backoff
+		if c.pool.Count() == 0 {
+			c.reconnector.Trigger()
 		}
 	}
 }
@@ -258,6 +322,11 @@ func (c *Client) checkAndReconnect() {
 // Stop gracefully shuts down the client
 func (c *Client) Stop() {
 	close(c.done)
+
+	// Stop stability modules
+	c.heartbeat.Stop()
+	c.quality.Stop()
+	c.reconnector.Stop()
 
 	// Stop forwarders
 	for _, fwd := range c.forwards {
