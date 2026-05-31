@@ -167,6 +167,22 @@ func (c *Client) connectSessions() error {
 		}
 		c.pool.Add(session)
 		connected++
+
+		// Register session with heartbeat monitor
+		sessionID := connected
+		c.heartbeat.Register(sessionID, func() error {
+			if session.IsClosed() {
+				return fmt.Errorf("session closed")
+			}
+			// Use smux's built-in ping (open+close a stream as health check)
+			stream, err := session.OpenStream()
+			if err != nil {
+				return err
+			}
+			stream.Close()
+			return nil
+		})
+		c.quality.Register(sessionID)
 	}
 
 	if connected == 0 {
@@ -305,6 +321,21 @@ func (c *Client) checkAndReconnect() {
 				continue
 			}
 			c.pool.Add(session)
+
+			// Register with heartbeat
+			newID := active + i + 1
+			c.heartbeat.Register(newID, func() error {
+				if session.IsClosed() {
+					return fmt.Errorf("session closed")
+				}
+				stream, err := session.OpenStream()
+				if err != nil {
+					return err
+				}
+				stream.Close()
+				return nil
+			})
+			c.quality.Register(newID)
 
 			// Update buffer tuner with connection RTT
 			rtt := time.Since(start)
