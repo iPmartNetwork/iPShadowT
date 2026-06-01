@@ -5,6 +5,7 @@
 FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
+ENV GOTOOLCHAIN=local
 
 WORKDIR /src
 COPY go.mod go.sum ./
