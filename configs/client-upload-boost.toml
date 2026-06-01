@@ -25,7 +25,7 @@ password = "your-password"
 # ── Multiplexing (aggressive) ──
 [mux]
 concurrency = 8                         # More sessions = more parallel upload
-frame_size = 65536                      # 64KB frames (less overhead per byte)
+frame_size = 32768                      # 64KB frames (less overhead per byte)
 recv_buffer = 16777216                  # 16MB receive buffer
 stream_buffer = 8388608                 # 8MB stream buffer
 max_streams = 2048                      # More streams allowed

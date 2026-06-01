@@ -21,6 +21,8 @@ type Forwarder struct {
 	listener net.Listener
 	done     chan struct{}
 	wg       sync.WaitGroup
+	// DirectDial is set when mux is disabled — dials a fresh connection per request
+	DirectDial func() (net.Conn, error)
 }
 
 // NewForwarder creates a new port forwarder
@@ -31,6 +33,21 @@ func NewForwarder(cfg config.ForwardConfig, pool *mux.SessionPool, log *logger.L
 		log:  log,
 		done: make(chan struct{}),
 	}, nil
+}
+
+// SetDirectDial sets a direct dial function (used when mux is disabled)
+func (f *Forwarder) SetDirectDial(fn func() (net.Conn, error)) {
+	f.DirectDial = fn
+}
+
+// getStream gets a stream from mux pool or dials directly
+func (f *Forwarder) getStream() (io.ReadWriteCloser, error) {
+	if f.DirectDial != nil {
+		// Direct mode: dial fresh connection (no mux overhead)
+		return f.DirectDial()
+	}
+	// Mux mode: get stream from pool
+	return f.pool.GetStream()
 }
 
 // Start begins listening and forwarding connections
@@ -55,7 +72,12 @@ func (f *Forwarder) startWireGuard() error {
 	if err != nil {
 		return err
 	}
-	return wgFwd.Start()
+	if err := wgFwd.Start(); err != nil {
+		// Don't crash the whole client — just warn and skip this forward
+		f.log.Warn("[%s] WireGuard forward skipped: %v", f.cfg.Name, err)
+		return nil
+	}
+	return nil
 }
 
 // startTCP starts a TCP port forwarder
@@ -105,8 +127,8 @@ func (f *Forwarder) handleTCPConn(conn net.Conn) {
 	defer f.wg.Done()
 	defer conn.Close()
 
-	// Get a stream from the mux pool
-	stream, err := f.pool.GetStream()
+	// Get a stream from the mux pool or direct dial
+	stream, err := f.getStream()
 	if err != nil {
 		f.log.Error("[%s] Failed to get stream: %v", f.cfg.Name, err)
 		return
@@ -178,8 +200,8 @@ func (f *Forwarder) handleSOCKS5(conn net.Conn) {
 		return
 	}
 
-	// Get a stream from the mux pool
-	stream, err := f.pool.GetStream()
+	// Get a stream from the mux pool or direct dial
+	stream, err := f.getStream()
 	if err != nil {
 		f.log.Error("[%s] Failed to get stream for %s: %v", f.cfg.Name, dest, err)
 		// Send SOCKS5 failure response

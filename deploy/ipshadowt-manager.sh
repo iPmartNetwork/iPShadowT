@@ -515,8 +515,8 @@ sni_spoof_method = \"${sni_method}\""
     local perf_concurrency=4
     local perf_frame=32768
     case $perf_choice in
-        2) perf_profile="upload_boost"; perf_concurrency=8; perf_frame=65536 ;;
-        3) perf_profile="high_throughput"; perf_concurrency=8; perf_frame=65536 ;;
+        2) perf_profile="upload_boost"; perf_concurrency=8; perf_frame=32768 ;;
+        3) perf_profile="high_throughput"; perf_concurrency=8; perf_frame=32768 ;;
         4) perf_profile="low_cpu"; perf_concurrency=2; perf_frame=16384 ;;
     esac
 

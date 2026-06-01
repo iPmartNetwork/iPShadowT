@@ -157,9 +157,13 @@ func (c *Client) Start() error {
 		c.log.Info("DNS resolved: %s → %s (via DoH)", c.cfg.RemoteAddr, resolvedAddr)
 	}
 
-	// Establish initial mux sessions
-	if err := c.connectSessions(); err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+	// Establish mux sessions (skip if mux disabled)
+	if c.cfg.Mux.Enabled {
+		if err := c.connectSessions(); err != nil {
+			return fmt.Errorf("failed to connect: %w", err)
+		}
+	} else {
+		c.log.Info("⚡ Direct relay mode (mux disabled) — no session pooling")
 	}
 
 	// Start port forwarders
@@ -167,19 +171,21 @@ func (c *Client) Start() error {
 		return fmt.Errorf("failed to start forwarders: %w", err)
 	}
 
-	// Start session maintenance (reconnect, health check)
-	c.wg.Add(1)
-	go c.maintainSessions()
+	// Start session maintenance (only if mux enabled)
+	if c.cfg.Mux.Enabled {
+		c.wg.Add(1)
+		go c.maintainSessions()
 
-	// Connect quality monitor to session pool for smart load balancing
-	c.pool.SetQualityFunc(func(sessionID int) int {
-		return c.quality.GetScore(sessionID)
-	})
+		// Connect quality monitor to session pool for smart load balancing
+		c.pool.SetQualityFunc(func(sessionID int) int {
+			return c.quality.GetScore(sessionID)
+		})
 
-	// Start stability modules
-	c.heartbeat.Start()
-	c.quality.Start()
-	c.warmup.Start()
+		// Start stability modules
+		c.heartbeat.Start()
+		c.quality.Start()
+		c.warmup.Start()
+	}
 
 	return nil
 }
@@ -255,20 +261,27 @@ func (c *Client) createSession() (*mux.Session, error) {
 		muxConn = &obfuscatedConn{Conn: conn, obf: obfConn}
 	}
 
-	// Apply SNI spoofing if enabled
+	// Apply SNI spoofing if enabled (only for TCP-based transports)
 	if c.cfg.AntiDPI.Enabled && c.cfg.AntiDPI.SNISpoof {
-		spoofCfg := antidpi.SNISpoofConfig{
-			FakeSNI: c.cfg.AntiDPI.SNISpoofDomain,
-			Method:  antidpi.SpoofMethod(c.cfg.AntiDPI.SNISpoofMethod),
+		// SNI spoofing only works with TLS/TCP transports, not UDP-based ones
+		isTCPTransport := c.cfg.Transport == "tcpmux" || c.cfg.Transport == "wsmux" ||
+			c.cfg.Transport == "h2mux" || c.cfg.Transport == "grpc" ||
+			c.cfg.Transport == "reality" || c.cfg.Transport == "shadowtls"
+
+		if isTCPTransport {
+			spoofCfg := antidpi.SNISpoofConfig{
+				FakeSNI: c.cfg.AntiDPI.SNISpoofDomain,
+				Method:  antidpi.SpoofMethod(c.cfg.AntiDPI.SNISpoofMethod),
+			}
+			if spoofCfg.FakeSNI == "" {
+				spoofCfg.FakeSNI = "www.google.com"
+			}
+			if spoofCfg.Method == "" {
+				spoofCfg.Method = antidpi.MethodSplit
+			}
+			spoofer := antidpi.NewSNISpoofing(spoofCfg, c.log)
+			muxConn = spoofer.WrapConn(muxConn)
 		}
-		if spoofCfg.FakeSNI == "" {
-			spoofCfg.FakeSNI = "www.google.com"
-		}
-		if spoofCfg.Method == "" {
-			spoofCfg.Method = antidpi.MethodSplit
-		}
-		spoofer := antidpi.NewSNISpoofing(spoofCfg, c.log)
-		muxConn = spoofer.WrapConn(muxConn)
 	}
 
 	// Perform handshake
@@ -333,6 +346,23 @@ func (c *Client) startForwarders() error {
 		fwd, err := tunnel.NewForwarder(fwdCfg, c.pool, c.log)
 		if err != nil {
 			return fmt.Errorf("failed to create forwarder %q: %w", fwdCfg.Name, err)
+		}
+
+		// If mux is disabled, use direct dial (no multiplexer overhead)
+		if !c.cfg.Mux.Enabled {
+			c.log.Info("  ⚡ Direct mode (no mux) — each connection dials fresh")
+			fwd.SetDirectDial(func() (net.Conn, error) {
+				conn, err := c.transport.Dial()
+				if err != nil {
+					return nil, err
+				}
+				// Handshake
+				if err := c.handshake(conn); err != nil {
+					conn.Close()
+					return nil, err
+				}
+				return conn, nil
+			})
 		}
 
 		if err := fwd.Start(); err != nil {

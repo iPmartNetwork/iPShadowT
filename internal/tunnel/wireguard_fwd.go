@@ -66,7 +66,7 @@ func (wf *WireGuardForwarder) Start() error {
 
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
-		return fmt.Errorf("listen UDP %s: %w", wf.cfg.Listen, err)
+		return fmt.Errorf("WireGuard forward: port %s already in use (is WireGuard running?): %w", wf.cfg.Listen, err)
 	}
 
 	wf.udpConn = conn
