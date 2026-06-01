@@ -151,26 +151,26 @@ ask_port() {
     local varname=$3
 
     while true; do
-        msg_ask "${prompt} [${default}]: "; read -r input
-        local port=${input:-$default}
+        msg_ask "${prompt} [${default}]: "; read -r _port_input
+        local _port_val=${_port_input:-$default}
 
-        if ! validate_port "$port"; then
+        if ! validate_port "$_port_val"; then
             msg_err "Invalid port (must be 1-65535)"
             continue
         fi
 
-        if ! is_port_free "$port"; then
-            local user=$(ss -tulnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1)
-            msg_warn "Port ${port} in use by: ${user}"
+        if ! is_port_free "$_port_val"; then
+            local user=$(ss -tulnp 2>/dev/null | grep ":${_port_val} " | awk '{print $NF}' | head -1)
+            msg_warn "Port ${_port_val} in use by: ${user}"
             msg_ask "Use anyway? [y/N]: "; read -r ans
             if [[ ! "$ans" =~ ^[Yy]$ ]]; then
-                local suggested=$(find_free_port $((port+1)))
+                local suggested=$(find_free_port $((_port_val+1)))
                 [ -n "$suggested" ] && msg_info "Suggested: ${suggested}"
                 continue
             fi
         fi
 
-        eval "$varname=$port"
+        eval "$varname=$_port_val"
         return 0
     done
 }
