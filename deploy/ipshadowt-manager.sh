@@ -41,6 +41,68 @@ msg_info()    { echo -e "  ${C}➤${N} $1"; }
 msg_ask()     { echo -ne "  ${W}?${N} $1"; }
 msg_step()    { echo -e "  ${M}●${N} $1"; }
 
+is_valid_ipv4() {
+    local ip=$1
+    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
+
+# Extract first IPv4 from curl output (ignores HTML error pages)
+extract_ipv4() {
+    echo "$1" | tr -d '\r' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1
+}
+
+get_local_primary_ip() {
+    local ip
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')
+    is_valid_ipv4 "$ip" && { echo "$ip"; return 0; }
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    is_valid_ipv4 "$ip" && { echo "$ip"; return 0; }
+    return 1
+}
+
+# Try several IP services — ifconfig.me often returns 403 HTML from Iran/filtered networks
+fetch_public_ip() {
+    local url resp ip
+    for url in \
+        "https://api.ipify.org" \
+        "https://icanhazip.com" \
+        "https://checkip.amazonaws.com" \
+        "https://ifconfig.me/ip" \
+        "https://api4.my-ip.io/ip" \
+        "http://ip.sb"; do
+        resp=$(curl -s4 --max-time 3 -A "iPShadowT-Manager/${VERSION}" "$url" 2>/dev/null) || continue
+        case "$resp" in *"<html"*|*"Forbidden"*|*"Error"*) continue ;; esac
+        ip=$(extract_ipv4 "$resp")
+        is_valid_ipv4 "$ip" && { echo "$ip"; return 0; }
+    done
+    ip=$(get_local_primary_ip) && { echo "$ip"; return 0; }
+    echo "N/A"
+}
+
+fetch_geo_label() {
+    local ip=$1
+    local geo country city
+    is_valid_ipv4 "$ip" || return 1
+    geo=$(curl -s --max-time 3 "http://ip-api.com/json/${ip}?fields=status,country,city" 2>/dev/null) || return 1
+    case "$geo" in *"<html"*) return 1 ;; esac
+    country=$(echo "$geo" | grep -o '"country":"[^"]*"' | head -1 | cut -d'"' -f4)
+    city=$(echo "$geo" | grep -o '"city":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [ -n "$city" ] && [ -n "$country" ]; then
+        echo "${city}, ${country}"
+    elif [ -n "$country" ]; then
+        echo "${country}"
+    else
+        return 1
+    fi
+}
+
+# Public IP for sharing with clients (never returns raw HTML)
+get_share_ip() {
+    local ip
+    ip=$(fetch_public_ip)
+    is_valid_ipv4 "$ip" && echo "$ip" || echo "YOUR_IP"
+}
+
 print_banner() {
     clear
     echo ""
@@ -54,12 +116,21 @@ print_banner() {
     echo -e "  ${BOLD}Anti-DPI Multi-Transport Tunnel Engine${N}"
     echo -e "  ${D}iPmart Network • Manager v${VERSION} • Binary $(get_version)${N}"
     print_dline
-    # Server info line
-    local ip=$(curl -s4 --max-time 2 ifconfig.me 2>/dev/null || echo "N/A")
-    local geo=$(curl -s --max-time 2 "http://ip-api.com/line/${ip}?fields=country,city" 2>/dev/null)
-    local country=$(echo "$geo" | sed -n '1p')
-    local city=$(echo "$geo" | sed -n '2p')
-    echo -e "  ${D}IP: ${W}${ip}${D}  •  ${city}, ${country}${N}"
+    local ip=$(fetch_public_ip)
+    local location=""
+    if is_valid_ipv4 "$ip"; then
+        location=$(fetch_geo_label "$ip" 2>/dev/null) || location=""
+        # Private/local address when external IP services are blocked (common on Iran servers)
+        if [[ "$ip" =~ ^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.) ]]; then
+            [ -z "$location" ] && location="local (public IP lookup blocked)"
+        elif [ -z "$location" ]; then
+            location="geo lookup unavailable"
+        fi
+    else
+        ip="N/A"
+        location="public IP lookup blocked"
+    fi
+    echo -e "  ${D}IP: ${W}${ip}${D}  •  ${location}${N}"
     print_dline
     echo ""
 }
@@ -889,7 +960,7 @@ listen = "127.0.0.1:9090"
 ${reality_section}
 EOF
 
-    local server_ip=$(curl -s4 --max-time 5 ifconfig.me 2>/dev/null || echo "YOUR_IP")
+    local server_ip=$(get_share_ip)
 
     echo ""
     print_line
@@ -926,7 +997,7 @@ export_config() {
 
     if [ "$mode" = "server" ]; then
         # Export client config for Iran
-        local server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
+        local server_ip=$(get_share_ip)
         local port=$(grep '^bind_addr' ${CONFIG_DIR}/config.toml 2>/dev/null | grep -oP ':\K[0-9]+')
         local password=$(grep '^password' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
         local transport=$(grep '^transport' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
@@ -1073,7 +1144,7 @@ setup_wireguard() {
     # Get server IP
     local server_ip
     if [ "$wg_role" = "1" ]; then
-        server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+        server_ip=$(get_share_ip)
     else
         msg_ask "Foreign server IP: "; read -r server_ip
         [ -z "$server_ip" ] && { msg_err "Server IP required"; return; }
@@ -1388,7 +1459,7 @@ do_status() {
 
     # System info
     echo ""
-    local pub_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "N/A")
+    local pub_ip=$(fetch_public_ip)
     local mem=$(free -m 2>/dev/null | awk '/Mem:/{printf "%d/%dMB (%d%%)", $3, $2, $3*100/$2}')
     local cpu=$(nproc 2>/dev/null || echo "?")
     local load=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
@@ -1762,7 +1833,7 @@ EOF
     systemctl daemon-reload
     systemctl enable "$svc" >/dev/null 2>&1
     if restart_service_safe "$svc" "$cf"; then
-        local sip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
+        local sip=$(get_share_ip)
         msg_ok "Server tunnel '${tname}' active on :${port}"
         echo -e "  ${D}Share: IP=${sip} Port=${port} Pass=${pass} Transport=${transport}${N}"
         if [ "$transport" = "reality" ]; then
