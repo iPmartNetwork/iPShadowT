@@ -102,6 +102,110 @@ validate_addr() {
     return 1
 }
 
+# Check if a port is available (not in use)
+is_port_free() {
+    local port=$1
+    ! ss -tuln 2>/dev/null | grep -q ":${port} "
+}
+
+# Find next free port starting from a given port
+find_free_port() {
+    local start=${1:-1080}
+    local max=${2:-65535}
+    local port=$start
+    while [ $port -le $max ]; do
+        if is_port_free $port; then
+            echo $port
+            return 0
+        fi
+        port=$((port+1))
+    done
+    echo ""
+    return 1
+}
+
+# Validate port number (1-65535)
+validate_port() {
+    local port=$1
+    [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
+}
+
+# Check port and warn if in use
+check_port_conflict() {
+    local port=$1
+    local name=$2
+    if ! is_port_free "$port"; then
+        local user=$(ss -tulnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1)
+        msg_warn "Port ${port} already in use by: ${user}"
+        msg_ask "Use anyway? [y/N]: "; read -r ans
+        [[ "$ans" =~ ^[Yy]$ ]] && return 0
+        return 1
+    fi
+    return 0
+}
+
+# Ask for port with validation and conflict check
+ask_port() {
+    local prompt=$1
+    local default=$2
+    local varname=$3
+
+    while true; do
+        msg_ask "${prompt} [${default}]: "; read -r input
+        local port=${input:-$default}
+
+        if ! validate_port "$port"; then
+            msg_err "Invalid port (must be 1-65535)"
+            continue
+        fi
+
+        if ! is_port_free "$port"; then
+            local user=$(ss -tulnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1)
+            msg_warn "Port ${port} in use by: ${user}"
+            msg_ask "Use anyway? [y/N]: "; read -r ans
+            if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+                local suggested=$(find_free_port $((port+1)))
+                [ -n "$suggested" ] && msg_info "Suggested: ${suggested}"
+                continue
+            fi
+        fi
+
+        eval "$varname=$port"
+        return 0
+    done
+}
+
+# Parse port range (e.g. "443,8443,2000-2010") and return list
+parse_port_range() {
+    local input=$1
+    local ports=""
+
+    IFS=',' read -ra PARTS <<< "$input"
+    for part in "${PARTS[@]}"; do
+        part=$(echo "$part" | tr -d ' ')
+        [ -z "$part" ] && continue
+
+        if [[ "$part" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            # Range: 2000-2010
+            local start=${BASH_REMATCH[1]}
+            local end=${BASH_REMATCH[2]}
+            if [ $start -le $end ] && validate_port $start && validate_port $end; then
+                for ((p=start; p<=end; p++)); do
+                    ports="${ports} ${p}"
+                done
+            else
+                msg_err "Invalid range: ${part}"
+            fi
+        elif validate_port "$part"; then
+            ports="${ports} ${part}"
+        else
+            msg_err "Invalid port: ${part}"
+        fi
+    done
+
+    echo $ports
+}
+
 count_tunnels() {
     local count=0
     for f in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
@@ -362,8 +466,9 @@ short_id = \"${short_id}\""
     fi
 
     # SOCKS5 port
-    msg_ask "SOCKS5 listen port [1080]: "; read -r socks_port
-    socks_port=${socks_port:-1080}
+    local socks_port
+    local suggested=$(find_free_port 1080)
+    ask_port "SOCKS5 listen port" "${suggested:-1080}" socks_port
 
     # Health check
     echo ""
@@ -457,8 +562,8 @@ setup_server() {
     print_line
     echo ""
 
-    msg_ask "Listen port [443]: "; read -r port
-    port=${port:-443}
+    local port
+    ask_port "Listen port" "443" port
 
     local password=$(gen_pass)
     msg_ask "Password [auto]: "; read -r user_pass
@@ -983,17 +1088,24 @@ short_id = \"${short_id}\""
     fi
 
     # SOCKS5 port auto-detect
-    local sp=1080
-    while ss -tuln 2>/dev/null | grep -q ":${sp} "; do sp=$((sp+1)); done
+    local sp=$(find_free_port 1080)
     msg_ask "SOCKS5 port [${sp}]: "; read -r usp; sp=${usp:-$sp}
+    if ! is_port_free "$sp"; then
+        msg_warn "Port ${sp} in use!"
+        sp=$(find_free_port $((sp+1)))
+        msg_info "Using ${sp} instead"
+    fi
 
-    # Port forwards
-    msg_ask "Extra port forwards (comma-sep, e.g. 443,8443) or empty: "; read -r ports_input
+    # Port forwards (supports ranges: 443,8443,2000-2010)
+    msg_ask "Port forwards (e.g. 443,8443,2000-2010) or empty: "; read -r ports_input
     local fwd_section=""
     if [ -n "$ports_input" ]; then
-        IFS=',' read -ra PORTS <<< "$ports_input"
-        for p in "${PORTS[@]}"; do
-            p=$(echo "$p" | tr -d ' '); [ -z "$p" ] && continue
+        local port_list=$(parse_port_range "$ports_input")
+        for p in $port_list; do
+            if ! is_port_free "$p"; then
+                msg_warn "Port ${p} in use — skipping"
+                continue
+            fi
             fwd_section="${fwd_section}
 [[forwards]]
 name = \"fwd-${p}\"
@@ -1070,6 +1182,15 @@ add_server_tunnel() {
     tname=$(echo "$tname" | tr -cd 'a-zA-Z0-9_-')
 
     msg_ask "Listen port: "; read -r port; [ -z "$port" ] && return
+    if ! validate_port "$port"; then
+        msg_err "Invalid port"; return
+    fi
+    if ! is_port_free "$port"; then
+        local user=$(ss -tulnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1)
+        msg_warn "Port ${port} in use by: ${user}"
+        msg_ask "Use anyway? [y/N]: "; read -r ans
+        [[ ! "$ans" =~ ^[Yy]$ ]] && return
+    fi
     msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
     echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic"
@@ -1219,6 +1340,15 @@ add_port_forward() {
     msg_ask "Protocol [1]: "; read -r proto
     local ftype="tcp"; [ "$proto" = "2" ] && ftype="udp"
     msg_ask "Listen port (this server): "; read -r lport; [ -z "$lport" ] && return
+    if ! validate_port "$lport"; then
+        msg_err "Invalid port"; return
+    fi
+    if ! is_port_free "$lport"; then
+        local user=$(ss -tulnp 2>/dev/null | grep ":${lport} " | awk '{print $NF}' | head -1)
+        msg_warn "Port ${lport} in use by: ${user}"
+        msg_ask "Use anyway? [y/N]: "; read -r ans
+        [[ ! "$ans" =~ ^[Yy]$ ]] && return
+    fi
     msg_ask "Remote port (foreign): "; read -r rport; [ -z "$rport" ] && return
 
     cat >> "$target" << EOF
