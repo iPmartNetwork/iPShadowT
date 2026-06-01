@@ -17,6 +17,7 @@ import (
 	"github.com/iPmart/iPShadowT/internal/ratelimit"
 	"github.com/iPmart/iPShadowT/internal/security"
 	"github.com/iPmart/iPShadowT/internal/transport"
+	"github.com/iPmart/iPShadowT/internal/utils"
 )
 
 // Server handles incoming tunnel connections
@@ -80,6 +81,17 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 
 // Start begins accepting connections
 func (s *Server) Start() error {
+	if s.cfg.Performance.KernelTuning {
+		kt := utils.NewKernelTuning(s.log)
+		if err := kt.Apply(s.cfg.Performance.BufferProfile); err != nil {
+			s.log.Warn("Kernel tuning: %v", err)
+		}
+	}
+
+	s.log.Info("Upload tuning: send_buf=%d recv_buf=%d mux_stream=%d profile=%s",
+		s.cfg.Performance.SendBuffer, s.cfg.Performance.RecvBuffer,
+		s.cfg.Mux.StreamBuffer, s.cfg.Performance.BufferProfile)
+
 	listener, err := s.transport.Listen()
 	if err != nil {
 		return err
@@ -159,6 +171,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	s.log.Info("New connection from %s", remoteAddr)
+
+	utils.OptimizeTCP(conn, s.cfg.Performance)
 
 	// Perform handshake (authenticate client)
 	if err := s.handshake(conn); err != nil {
@@ -297,7 +311,7 @@ func (s *Server) relayWithMetrics(a io.ReadWriteCloser, b net.Conn) {
 	// a → b (download from perspective of client)
 	go func() {
 		defer wg.Done()
-		n, _ := io.Copy(b, a)
+		n, _ := utils.CopyRelay(b, a)
 		s.metrics.BytesReceived.Add(n)
 		if s.healthSvc != nil {
 			s.healthSvc.AddBytesIn(n)
@@ -307,7 +321,7 @@ func (s *Server) relayWithMetrics(a io.ReadWriteCloser, b net.Conn) {
 	// b → a (upload from perspective of client)
 	go func() {
 		defer wg.Done()
-		n, _ := io.Copy(a, b)
+		n, _ := utils.CopyRelay(a, b)
 		s.metrics.BytesSent.Add(n)
 		if s.healthSvc != nil {
 			s.healthSvc.AddBytesOut(n)

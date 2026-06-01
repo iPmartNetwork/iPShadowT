@@ -1,6 +1,6 @@
 [Unit]
 Description=iPShadowT - Anti-DPI Multi-Transport Tunnel
-Documentation=https://github.com/iPmart/iPShadowT
+Documentation=https://github.com/iPmartNetwork/iPShadowT
 After=network.target network-online.target
 Wants=network-online.target
 

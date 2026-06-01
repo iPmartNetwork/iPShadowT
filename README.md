@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.2.0-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.2.1-blue?style=flat-square" alt="Version"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows%20%7C%20freebsd-lightgrey?style=flat-square" alt="Platform"/></a>
@@ -39,6 +39,15 @@ iPShadowT is a high-performance, self-contained tunnel engine designed to bypass
 
 Built to survive even the most extreme filtering scenarios — including complete internet shutdowns where only DNS traffic is allowed.
 
+### 🆕 What's New in v2.2.1
+
+- 📤 **Upload speed fix** — TCP buffers, 256KB relay, `kernel_tuning` wired, `upload_boost` profile works
+- 🔧 **Port-independent** — tuning applies on any port automatically
+- 📦 **Manager script** — defaults to upload_boost for Iran clients
+
+<details>
+<summary>Previous: v2.2.0</summary>
+
 ### 🆕 What's New in v2.2.0
 
 - 🕵️ **SNI Spoofing** — Packet-level SNI manipulation (split/replace/double)
@@ -50,6 +59,8 @@ Built to survive even the most extreme filtering scenarios — including complet
 - 💓 **Stability Engine** — Heartbeat, quality monitor, smart reconnect, DPI detection
 - ⚖️ **Quality-Aware LB** — Routes traffic to best-performing session
 - 🔧 **KCP Tuning** — Fine-grained UDP transport parameters
+
+</details>
 
 ---
 
@@ -270,8 +281,8 @@ docker build -t ipshadowt .
 docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 -p 443:443/udp ipshadowt
 
 # Or pull from GHCR
-docker pull ghcr.io/ipmartnetwork/ipshadowt:2.0.0
-docker run -v ./config.toml:/etc/ipshadowt/config.toml ghcr.io/ipmartnetwork/ipshadowt:2.0.0
+docker pull ghcr.io/ipmartnetwork/ipshadowt:2.2.1
+docker run -v ./config.toml:/etc/ipshadowt/config.toml ghcr.io/ipmartnetwork/ipshadowt:2.2.1
 ```
 
 ### Monitoring Stack (Prometheus + Grafana)

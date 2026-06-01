@@ -103,6 +103,42 @@ password = "test"
 	}
 }
 
+func TestUploadDefaultsApplied(t *testing.T) {
+	content := `
+mode = "client"
+remote_addr = "server.com:443"
+password = "test"
+transport = "tcpmux"
+`
+	cfg := writeAndLoad(t, content)
+
+	if cfg.Performance.SendBuffer < 16777216 {
+		t.Fatalf("expected send_buffer >= 16MB, got %d", cfg.Performance.SendBuffer)
+	}
+	if cfg.Mux.StreamBuffer < 8388608 {
+		t.Fatalf("expected mux stream_buffer >= 8MB, got %d", cfg.Mux.StreamBuffer)
+	}
+	if !cfg.Performance.Nodelay {
+		t.Fatal("expected nodelay=true for client")
+	}
+}
+
+func TestUploadBoostProfile(t *testing.T) {
+	content := `
+mode = "client"
+remote_addr = "server.com:443"
+password = "test"
+
+[performance]
+buffer_profile = "upload_boost"
+`
+	cfg := writeAndLoad(t, content)
+
+	if cfg.Performance.SendBuffer != 16777216 {
+		t.Fatalf("expected upload_boost send_buffer=16MB, got %d", cfg.Performance.SendBuffer)
+	}
+}
+
 func writeAndLoad(t *testing.T, content string) *Config {
 	t.Helper()
 	cfg, err := loadFromString(content)

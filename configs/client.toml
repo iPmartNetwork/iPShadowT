@@ -33,9 +33,9 @@ timeout = 40                # Heartbeat timeout (seconds)
 [performance]
 nodelay = true
 keepalive = 15
-buffer_profile = "balanced"
+buffer_profile = "upload_boost"  # upload_boost | balanced | high_throughput | low_cpu
+kernel_tuning = true           # Linux: auto BBR + TCP buffers (needs root)
 workers = 4
-kernel_tuning = true
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Port Forwarding Rules

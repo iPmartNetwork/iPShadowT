@@ -7,7 +7,7 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ─── Constants ────────────────────────────────────
-VERSION="2.2.0"
+VERSION="2.2.1"
 GITHUB_REPO="iPmartNetwork/iPShadowT"
 BINARY_NAME="ipshadowt"
 INSTALL_DIR="/usr/local/bin"
@@ -306,6 +306,8 @@ net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 524288 16777216
 net.ipv4.tcp_wmem = 4096 524288 16777216
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_notsent_lowat = 16384
 net.core.somaxconn = 65535
 net.ipv4.tcp_max_syn_backlog = 65535
 net.ipv4.tcp_tw_reuse = 1
@@ -507,17 +509,21 @@ sni_spoof_method = \"${sni_method}\""
     echo ""
     echo -e "  ${W}Performance profile:${N}"
     echo -e "    ${C}1)${N} balanced       ${D}— default, good for most${N}"
-    echo -e "    ${C}2)${N} upload_boost   ${D}— max upload speed (less stealth)${N}"
+    echo -e "    ${C}2)${N} upload_boost   ${D}— max upload speed (recommended for Iran client)${N}"
     echo -e "    ${C}3)${N} high_throughput ${D}— max download speed${N}"
     echo -e "    ${C}4)${N} low_cpu        ${D}— minimal resource usage${N}"
-    msg_ask "Choice [1]: "; read -r perf_choice
-    local perf_profile="balanced"
-    local perf_concurrency=4
+    msg_ask "Choice [2]: "; read -r perf_choice
+    local perf_profile="upload_boost"
+    local perf_concurrency=8
     local perf_frame=32768
+    local anti_fragment="false"
+    local anti_padding="false"
+    local anti_traffic_shape="false"
     case $perf_choice in
-        2) perf_profile="upload_boost"; perf_concurrency=8; perf_frame=32768 ;;
-        3) perf_profile="high_throughput"; perf_concurrency=8; perf_frame=32768 ;;
-        4) perf_profile="low_cpu"; perf_concurrency=2; perf_frame=16384 ;;
+        1) perf_profile="balanced"; perf_concurrency=4; anti_fragment="true"; anti_padding="true" ;;
+        3) perf_profile="high_throughput"; perf_concurrency=8; anti_fragment="false"; anti_padding="false" ;;
+        4) perf_profile="low_cpu"; perf_concurrency=2; perf_frame=16384; anti_fragment="true"; anti_padding="true" ;;
+        *) ;; # upload_boost (default)
     esac
 
     # WireGuard forward option
@@ -560,14 +566,16 @@ timeout = 40
 nodelay = true
 keepalive = 15
 buffer_profile = "${perf_profile}"
+kernel_tuning = true
 
 [anti_dpi]
 enabled = true
 utls_fingerprint = "chrome"
-fragment = true
+fragment = ${anti_fragment}
 fragment_size = "40-80"
-padding = true
+padding = ${anti_padding}
 padding_size = "16-256"
+traffic_shape = ${anti_traffic_shape}
 ${sni_section}
 ${cdn_section}
 ${health_section}
@@ -720,7 +728,7 @@ timeout = 40
 [performance]
 nodelay = true
 keepalive = 15
-buffer_profile = "high_throughput"
+buffer_profile = "upload_boost"
 kernel_tuning = true
 
 [health]
@@ -779,7 +787,13 @@ export_config() {
         echo "password = \"${password}\""
         echo ""
         echo "[mux]"
-        echo "concurrency = 4"
+        echo "concurrency = 8"
+        echo ""
+        echo "[performance]"
+        echo "nodelay = true"
+        echo "keepalive = 15"
+        echo "buffer_profile = \"upload_boost\""
+        echo "kernel_tuning = true"
         echo ""
         echo "[heartbeat]"
         echo "enabled = true"
@@ -789,7 +803,9 @@ export_config() {
         echo "[anti_dpi]"
         echo "enabled = true"
         echo "utls_fingerprint = \"chrome\""
-        echo "fragment = true"
+        echo "fragment = false"
+        echo "padding = false"
+        echo "traffic_shape = false"
         echo ""
         echo "[[forwards]]"
         echo "name = \"socks5\""
@@ -1416,7 +1432,7 @@ password = "${pass}"
 ${tls_section}
 
 [mux]
-concurrency = 4
+concurrency = 8
 frame_size = 32768
 
 [heartbeat]
@@ -1427,6 +1443,8 @@ timeout = 40
 [performance]
 nodelay = true
 keepalive = 15
+buffer_profile = "upload_boost"
+kernel_tuning = true
 ${cdn_section}
 ${reality_section}
 
@@ -1550,7 +1568,8 @@ timeout = 40
 [performance]
 nodelay = true
 keepalive = 15
-buffer_profile = "high_throughput"
+buffer_profile = "upload_boost"
+kernel_tuning = true
 
 [health]
 enabled = true

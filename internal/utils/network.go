@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -22,7 +21,7 @@ func TCPRelay(left, right net.Conn) (int64, int64) {
 	// left → right
 	go func() {
 		defer wg.Done()
-		leftToRight, _ = io.Copy(right, left)
+		leftToRight, _ = CopyRelay(right, left)
 		// Signal write done
 		if tc, ok := right.(*net.TCPConn); ok {
 			tc.CloseWrite()
@@ -32,7 +31,7 @@ func TCPRelay(left, right net.Conn) (int64, int64) {
 	// right → left
 	go func() {
 		defer wg.Done()
-		rightToLeft, _ = io.Copy(left, right)
+		rightToLeft, _ = CopyRelay(left, right)
 		if tc, ok := left.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}

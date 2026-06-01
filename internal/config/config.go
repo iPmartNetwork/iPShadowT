@@ -251,6 +251,75 @@ func applyDefaults(cfg *Config) {
 	if cfg.AntiDPI.PaddingSize == "" {
 		cfg.AntiDPI.PaddingSize = "16-256"
 	}
+
+	applyBufferProfile(cfg)
+	applyUploadDefaults(cfg)
+}
+
+// applyBufferProfile fills socket/mux buffer sizes from buffer_profile when not set explicitly.
+func applyBufferProfile(cfg *Config) {
+	var sendBuf, recvBuf, muxRecv, muxStream int
+
+	switch cfg.Performance.BufferProfile {
+	case "upload_boost":
+		sendBuf, recvBuf = 16777216, 16777216 // 16MB
+		muxRecv, muxStream = 16777216, 8388608
+	case "high_throughput":
+		sendBuf, recvBuf = 67108864, 67108864 // 64MB
+		muxRecv, muxStream = 67108864, 16777216
+	case "low_cpu":
+		sendBuf, recvBuf = 4194304, 4194304 // 4MB
+		muxRecv, muxStream = 4194304, 2097152
+	default:
+		return
+	}
+
+	if cfg.Performance.SendBuffer == 0 {
+		cfg.Performance.SendBuffer = sendBuf
+	}
+	if cfg.Performance.RecvBuffer == 0 {
+		cfg.Performance.RecvBuffer = recvBuf
+	}
+	if cfg.Mux.RecvBuffer == 0 || cfg.Mux.RecvBuffer == 4194304 {
+		cfg.Mux.RecvBuffer = muxRecv
+	}
+	if cfg.Mux.StreamBuffer == 0 || cfg.Mux.StreamBuffer == 2097152 {
+		cfg.Mux.StreamBuffer = muxStream
+	}
+}
+
+// applyUploadDefaults raises TCP/mux buffers for tunnel endpoints when still at generic defaults.
+// Applies regardless of port — upload path is often send-buffer limited on client and recv on server.
+func applyUploadDefaults(cfg *Config) {
+	if cfg.Performance.BufferProfile == "low_cpu" {
+		return
+	}
+	if cfg.Performance.BufferProfile == "low_cpu" {
+		return
+	}
+	const (
+		tcpBuf   = 16777216 // 16MB SO_SNDBUF / SO_RCVBUF
+		muxRecv  = 16777216
+		muxStream = 8388608
+	)
+
+	if cfg.Performance.SendBuffer == 0 {
+		cfg.Performance.SendBuffer = tcpBuf
+	}
+	if cfg.Performance.RecvBuffer == 0 {
+		cfg.Performance.RecvBuffer = tcpBuf
+	}
+	if cfg.Mux.RecvBuffer <= 4194304 {
+		cfg.Mux.RecvBuffer = muxRecv
+	}
+	if cfg.Mux.StreamBuffer <= 2097152 {
+		cfg.Mux.StreamBuffer = muxStream
+	}
+
+	// Client → foreign server: outbound upload benefits from TCP_NODELAY
+	if cfg.Mode == "client" && cfg.Performance.BufferProfile != "low_cpu" {
+		cfg.Performance.Nodelay = true
+	}
 }
 
 func validate(cfg *Config) error {

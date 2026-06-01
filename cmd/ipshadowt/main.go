@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	Version   = "v1.0.0-alpha1"
+	Version   = "v2.2.1"
+	Commit    = "unknown"
 	BuildTime = "unknown"
 	Author    = "iPmart Network (Ali Hassanzadeh)"
 	Project   = "iPShadowT"
@@ -31,7 +32,7 @@ func main() {
 		fmt.Printf("  Author: %s\n", Author)
 		fmt.Println("  iP: iPmart | Shadow: Stealth | T: Tunnel")
 		fmt.Println("  Anti-DPI Multi-Transport Tunnel")
-		fmt.Printf("  https://github.com/iPmart/%s\n", Project)
+		fmt.Printf("  https://github.com/iPmartNetwork/%s\n", Project)
 		os.Exit(0)
 	}
 

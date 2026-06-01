@@ -39,7 +39,7 @@ type Asset struct {
 func NewUpdater(currentVersion string, log *logger.Logger) *Updater {
 	return &Updater{
 		currentVersion: currentVersion,
-		repoOwner:      "iPmart",
+		repoOwner:      "iPmartNetwork",
 		repoName:       "iPShadowT",
 		log:            log,
 	}

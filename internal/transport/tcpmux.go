@@ -8,6 +8,7 @@ import (
 
 	"github.com/iPmart/iPShadowT/internal/config"
 	"github.com/iPmart/iPShadowT/internal/logger"
+	"github.com/iPmart/iPShadowT/internal/utils"
 )
 
 // TCPMux implements Transport using raw TCP with optional TLS
@@ -58,10 +59,7 @@ func (t *TCPMux) Dial() (net.Conn, error) {
 		return nil, fmt.Errorf("dial %s failed: %w", addr, err)
 	}
 
-	// Apply TCP optimizations
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		t.optimizeTCP(tcpConn)
-	}
+	utils.OptimizeTCP(conn, t.cfg.Performance)
 
 	t.log.Debug("Connected to %s via TCP", addr)
 	return conn, nil
@@ -98,7 +96,7 @@ func (t *TCPMux) Listen() (net.Listener, error) {
 
 	t.listener = listener
 	t.log.Info("TCP transport listening on %s", addr)
-	return listener, nil
+	return utils.NewOptimizedListener(listener, t.cfg.Performance), nil
 }
 
 // Close shuts down the transport
@@ -109,14 +107,3 @@ func (t *TCPMux) Close() error {
 	return nil
 }
 
-// optimizeTCP applies TCP performance optimizations
-func (t *TCPMux) optimizeTCP(conn *net.TCPConn) {
-	if t.cfg.Performance.Nodelay {
-		conn.SetNoDelay(true)
-	}
-	if t.cfg.Performance.KeepAlive > 0 {
-		conn.SetKeepAlive(true)
-		conn.SetKeepAlivePeriod(time.Duration(t.cfg.Performance.KeepAlive) * time.Second)
-	}
-	// Buffer sizes are set via sysctl for better performance
-}

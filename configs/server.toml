@@ -41,6 +41,6 @@ nodelay = true              # TCP_NODELAY
 keepalive = 15              # TCP keepalive (seconds)
 send_buffer = 4194304       # SO_SNDBUF (4MB)
 recv_buffer = 4194304       # SO_RCVBUF (4MB)
-buffer_profile = "balanced" # low_cpu, balanced, high_throughput
+buffer_profile = "upload_boost" # low_cpu, balanced, high_throughput, upload_boost
 workers = 4                 # Worker goroutines
 kernel_tuning = true        # Auto-tune kernel params (Linux only)

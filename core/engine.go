@@ -34,13 +34,13 @@ import (
 )
 
 // Version is the engine version
-const Version = "v2.2.0"
+const Version = "v2.2.1"
 
 // Author is the project author
 const Author = "iPmart Network (Ali Hassanzadeh)"
 
 // ProjectURL is the project repository
-const ProjectURL = "https://github.com/iPmart/iPShadowT"
+const ProjectURL = "https://github.com/iPmartNetwork/iPShadowT"
 
 // Mode represents the engine operating mode
 type Mode string

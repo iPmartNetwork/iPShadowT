@@ -4,6 +4,8 @@
 
 FROM golang:1.24 AS builder
 
+ARG VERSION=2.2.1
+
 ENV GOTOOLCHAIN=local
 ENV CGO_ENABLED=0
 ENV GOOS=linux
@@ -15,7 +17,7 @@ RUN go mod download
 COPY . .
 RUN go build \
     -trimpath \
-    -ldflags "-s -w -X main.Version=v2.2.0" \
+    -ldflags "-s -w -X main.Version=v${VERSION}" \
     -o /ipshadowt ./cmd/ipshadowt/
 
 # Final image

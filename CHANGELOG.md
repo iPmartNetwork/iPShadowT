@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] - 2026-06-01
+
+### Fixed
+
+#### Upload throughput (tcpmux / Iran client → foreign server)
+- **TCP socket buffers** — `send_buffer` / `recv_buffer` from config are now applied via `SO_SNDBUF` / `SO_RCVBUF` on every connection (port-independent)
+- **Server accept path** — incoming client connections are tuned on accept (including TLS unwrap)
+- **Data relay** — mux and server relay use 256KB copy buffers instead of 32KB default `io.Copy`
+- **kernel_tuning** — `kernel_tuning = true` in config now actually runs at client/server startup (was defined but never called)
+- **upload_boost profile** — sysctl profile implemented (BBR, 16MB windows, `tcp_notsent_lowat`)
+- **Config defaults** — client/server auto-apply upload-friendly TCP and smux buffer sizes when not explicitly set
+- **Buffer tuner** — initializes from configured buffers instead of 64KB minimum
+
+#### Install script (`ipshadowt-manager.sh`)
+- Client setup defaults to **upload_boost** profile with `kernel_tuning = true`
+- Anti-DPI fragment/padding disabled when upload_boost is selected
+- Multi-tunnel and export configs include upload tuning
+- Sysctl install adds `tcp_window_scaling` and `tcp_notsent_lowat`
+
+#### Other
+- CLI default version aligned to v2.2.1 (was stale `v1.0.0-alpha1`)
+- Auto-updater points to `iPmartNetwork/iPShadowT` on GitHub
+
+---
+
 ## [2.2.0] - 2026-06-01
 
 ### 🚀 New Features

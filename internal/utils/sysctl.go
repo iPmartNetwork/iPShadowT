@@ -80,6 +80,21 @@ func (kt *KernelTuning) getProfile(profile string) map[string]string {
 		base["net.ipv4.tcp_timestamps"] = "1"
 		base["net.ipv4.tcp_sack"] = "1"
 		base["net.core.optmem_max"] = "65535"
+		base["net.ipv4.tcp_congestion_control"] = "bbr"
+		base["net.ipv4.tcp_notsent_lowat"] = "16384"
+
+	case "upload_boost":
+		// Optimized for asymmetric links (Iran client → foreign server upload)
+		base["net.core.rmem_max"] = "16777216"       // 16MB
+		base["net.core.wmem_max"] = "16777216"       // 16MB
+		base["net.ipv4.tcp_rmem"] = "4096 524288 16777216"
+		base["net.ipv4.tcp_wmem"] = "4096 524288 16777216"
+		base["net.ipv4.tcp_window_scaling"] = "1"
+		base["net.ipv4.tcp_timestamps"] = "1"
+		base["net.ipv4.tcp_sack"] = "1"
+		base["net.ipv4.tcp_congestion_control"] = "bbr"
+		base["net.ipv4.tcp_slow_start_after_idle"] = "0"
+		base["net.ipv4.tcp_notsent_lowat"] = "16384"
 
 	case "low_cpu":
 		// Minimize CPU usage

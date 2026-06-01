@@ -9,6 +9,7 @@ import (
 
 	"github.com/iPmart/iPShadowT/internal/config"
 	"github.com/iPmart/iPShadowT/internal/logger"
+	"github.com/iPmart/iPShadowT/internal/utils"
 	"github.com/xtaci/smux"
 )
 
@@ -256,7 +257,7 @@ func Relay(left, right io.ReadWriteCloser) {
 
 	go func() {
 		defer wg.Done()
-		io.Copy(right, left)
+		utils.CopyRelay(right, left)
 		if closer, ok := right.(interface{ CloseWrite() error }); ok {
 			closer.CloseWrite()
 		}
@@ -264,7 +265,7 @@ func Relay(left, right io.ReadWriteCloser) {
 
 	go func() {
 		defer wg.Done()
-		io.Copy(left, right)
+		utils.CopyRelay(left, right)
 		if closer, ok := left.(interface{ CloseWrite() error }); ok {
 			closer.CloseWrite()
 		}

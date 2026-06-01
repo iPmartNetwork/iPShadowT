@@ -15,6 +15,7 @@ import (
 	"github.com/iPmart/iPShadowT/internal/stability"
 	"github.com/iPmart/iPShadowT/internal/transport"
 	"github.com/iPmart/iPShadowT/internal/tunnel"
+	"github.com/iPmart/iPShadowT/internal/utils"
 )
 
 // Client manages the tunnel connection to the server
@@ -137,7 +138,17 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 		log.Warn("DPI pattern %s detected, recommended transport: %s", pattern, recommended)
 	})
 
-	c.bufferTuner = stability.NewBufferTuner(stability.BufferConfig{}, log)
+	maxBuf := cfg.Performance.RecvBuffer * 4
+	if maxBuf <= 0 {
+		maxBuf = 67108864
+	}
+	c.bufferTuner = stability.NewBufferTuner(stability.BufferConfig{
+		MinBuffer: cfg.Performance.SendBuffer,
+		MaxBuffer: maxBuf,
+	}, log)
+	if cfg.Performance.SendBuffer > 0 {
+		c.bufferTuner.UpdateMetrics(int64(cfg.Performance.SendBuffer), 100*time.Millisecond)
+	}
 
 	// Initialize warmup pool (pre-connects sessions in background)
 	c.warmup = stability.NewWarmupPool(stability.WarmupConfig{
@@ -153,6 +164,17 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 
 // Start connects to the server and starts port forwarding
 func (c *Client) Start() error {
+	if c.cfg.Performance.KernelTuning {
+		kt := utils.NewKernelTuning(c.log)
+		if err := kt.Apply(c.cfg.Performance.BufferProfile); err != nil {
+			c.log.Warn("Kernel tuning: %v", err)
+		}
+	}
+
+	c.log.Info("Upload tuning: send_buf=%d recv_buf=%d mux_stream=%d profile=%s",
+		c.cfg.Performance.SendBuffer, c.cfg.Performance.RecvBuffer,
+		c.cfg.Mux.StreamBuffer, c.cfg.Performance.BufferProfile)
+
 	// Resolve remote address using DoH (prevents DNS poisoning)
 	resolvedAddr, err := c.dnsResolver.ResolveAddr(c.cfg.RemoteAddr)
 	if err != nil {
@@ -312,6 +334,14 @@ func (c *Client) createSession() (*mux.Session, error) {
 	if tunedSend > muxCfg.StreamBuffer {
 		muxCfg.StreamBuffer = tunedSend
 	}
+	if c.cfg.Performance.SendBuffer > muxCfg.StreamBuffer {
+		muxCfg.StreamBuffer = c.cfg.Performance.SendBuffer
+	}
+	if c.cfg.Performance.RecvBuffer > muxCfg.RecvBuffer {
+		muxCfg.RecvBuffer = c.cfg.Performance.RecvBuffer
+	}
+
+	utils.OptimizeTCP(conn, c.cfg.Performance)
 
 	// Create mux session with tuned buffers
 	session, err := mux.NewClientSession(muxConn, &muxCfg, c.log)
