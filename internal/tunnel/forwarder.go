@@ -42,9 +42,20 @@ func (f *Forwarder) Start() error {
 		return f.startSOCKS5()
 	case "http":
 		return f.startHTTPProxy()
+	case "wireguard", "wg":
+		return f.startWireGuard()
 	default:
 		return fmt.Errorf("unsupported forward type: %s", f.cfg.Type)
 	}
+}
+
+// startWireGuard starts a WireGuard UDP forwarder
+func (f *Forwarder) startWireGuard() error {
+	wgFwd, err := NewWireGuardForwarder(f.cfg, f.pool, f.log)
+	if err != nil {
+		return err
+	}
+	return wgFwd.Start()
 }
 
 // startTCP starts a TCP port forwarder

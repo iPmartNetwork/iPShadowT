@@ -1,11 +1,15 @@
 package wireguard
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/curve25519"
 
 	"github.com/iPmart/iPShadowT/internal/logger"
 )
@@ -229,32 +233,145 @@ func (w *Inner) CreateTunnelRelay(tunnelConn io.ReadWriteCloser) {
 	wg.Wait()
 }
 
-// GenerateKeyPair generates a WireGuard key pair
+// GenerateKeyPair generates a WireGuard key pair (Curve25519)
 // Returns (privateKey, publicKey) as base64 strings
 func GenerateKeyPair() (string, string, error) {
-	// WireGuard uses Curve25519 for key exchange
-	// In production, use golang.zx2c4.com/wireguard
-	// For now, return placeholder
-	return "", "", fmt.Errorf("use 'wg genkey' and 'wg pubkey' to generate keys")
+	// Generate 32 random bytes for private key
+	var privateKey [32]byte
+	if _, err := rand.Read(privateKey[:]); err != nil {
+		return "", "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+
+	// Clamp private key (WireGuard spec)
+	privateKey[0] &= 248
+	privateKey[31] &= 127
+	privateKey[31] |= 64
+
+	// Derive public key: public = Curve25519(private, basepoint)
+	publicKey, err := curve25519.X25519(privateKey[:], curve25519.Basepoint)
+	if err != nil {
+		return "", "", fmt.Errorf("curve25519 failed: %w", err)
+	}
+
+	privB64 := base64.StdEncoding.EncodeToString(privateKey[:])
+	pubB64 := base64.StdEncoding.EncodeToString(publicKey)
+
+	return privB64, pubB64, nil
 }
 
-// GenerateConfig generates a WireGuard config file content
-func GenerateConfig(cfg Config, isServer bool) string {
+// GeneratePreSharedKey generates a WireGuard pre-shared key
+func GeneratePreSharedKey() (string, error) {
+	var psk [32]byte
+	if _, err := rand.Read(psk[:]); err != nil {
+		return "", fmt.Errorf("failed to generate PSK: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(psk[:]), nil
+}
+
+// KeyPair holds a WireGuard key pair
+type KeyPair struct {
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+}
+
+// GenerateFullConfig generates matching server + client WireGuard configs
+// This ensures keys are always correct and matching
+func GenerateFullConfig(serverEndpoint string, tunnelSubnet string) (*FullWGConfig, error) {
+	if tunnelSubnet == "" {
+		tunnelSubnet = "10.66.66"
+	}
+
+	// Generate server keys
+	serverPriv, serverPub, err := GenerateKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("server keygen: %w", err)
+	}
+
+	// Generate client keys
+	clientPriv, clientPub, err := GenerateKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("client keygen: %w", err)
+	}
+
+	// Generate pre-shared key
+	psk, err := GeneratePreSharedKey()
+	if err != nil {
+		return nil, fmt.Errorf("PSK gen: %w", err)
+	}
+
+	return &FullWGConfig{
+		Server: WGNodeConfig{
+			PrivateKey:   serverPriv,
+			PublicKey:    serverPub,
+			Address:      tunnelSubnet + ".1/24",
+			ListenPort:   "51820",
+			PeerPublicKey: clientPub,
+			PeerAllowedIPs: tunnelSubnet + ".2/32",
+			PreSharedKey: psk,
+		},
+		Client: WGNodeConfig{
+			PrivateKey:   clientPriv,
+			PublicKey:    clientPub,
+			Address:      tunnelSubnet + ".2/24",
+			ListenPort:   "",
+			PeerPublicKey: serverPub,
+			PeerAllowedIPs: "0.0.0.0/0",
+			PeerEndpoint: serverEndpoint,
+			PreSharedKey: psk,
+			DNS:          "1.1.1.1, 8.8.8.8",
+		},
+	}, nil
+}
+
+// FullWGConfig holds matching server + client configs
+type FullWGConfig struct {
+	Server WGNodeConfig `json:"server"`
+	Client WGNodeConfig `json:"client"`
+}
+
+// WGNodeConfig holds config for one side
+type WGNodeConfig struct {
+	PrivateKey     string `json:"private_key"`
+	PublicKey      string `json:"public_key"`
+	Address        string `json:"address"`
+	ListenPort     string `json:"listen_port"`
+	PeerPublicKey  string `json:"peer_public_key"`
+	PeerAllowedIPs string `json:"peer_allowed_ips"`
+	PeerEndpoint   string `json:"peer_endpoint"`
+	PreSharedKey   string `json:"preshared_key"`
+	DNS            string `json:"dns"`
+}
+
+// ToINI generates WireGuard INI config file content
+func (n *WGNodeConfig) ToINI() string {
 	config := fmt.Sprintf(`[Interface]
 PrivateKey = %s
-ListenPort = %s
-MTU = %d
+Address = %s
+`, n.PrivateKey, n.Address)
 
+	if n.ListenPort != "" {
+		config += fmt.Sprintf("ListenPort = %s\n", n.ListenPort)
+	}
+	if n.DNS != "" {
+		config += fmt.Sprintf("DNS = %s\n", n.DNS)
+	}
+
+	config += fmt.Sprintf(`
 [Peer]
 PublicKey = %s
 AllowedIPs = %s
-`, cfg.PrivateKey, extractPort(cfg.ListenAddr), cfg.MTU, cfg.PeerKey, joinIPs(cfg.AllowedIPs))
+`, n.PeerPublicKey, n.PeerAllowedIPs)
 
-	if !isServer && cfg.PeerAddr != "" {
-		config += fmt.Sprintf("Endpoint = %s\n", cfg.PeerAddr)
+	if n.PeerEndpoint != "" {
+		config += fmt.Sprintf("Endpoint = %s\n", n.PeerEndpoint)
 	}
-	if cfg.Keepalive > 0 {
-		config += fmt.Sprintf("PersistentKeepalive = %d\n", cfg.Keepalive)
+	if n.PreSharedKey != "" {
+		config += fmt.Sprintf("PresharedKey = %s\n", n.PreSharedKey)
+	}
+
+	// Client gets persistent keepalive
+	if n.PeerEndpoint != "" {
+		config += "PersistentKeepalive = 25\n"
 	}
 
 	return config

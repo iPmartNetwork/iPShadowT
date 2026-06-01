@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-06-01
+
+### 🚀 New Features
+
+#### Anti-DPI
+- **SNI Spoofing** — Packet-level SNI manipulation (split/replace/double methods)
+- **Domain Fronting** — Client-side domain fronting via CDN (no server changes needed)
+- **FakeTCP Transport** — UDP payloads over fake TCP (bypass UDP blocking)
+- **Pipeline Architecture** — Chain multiple transports (inspired by WaterWall)
+
+#### Networking
+- **WireGuard Forward Type** — Use WireGuard client through iPShadowT tunnel
+- **WireGuard Key Generation** — Real Curve25519 keys (auto-generate matching pairs)
+- **WireGuard Auto-Setup** — Script generates both server + client configs with matching keys
+- **Upload Boost Profile** — Optimized config for maximum upload speed
+- **KCP Tuning Config** — Fine-grained KCP parameters (mode, window, FEC, buffer)
+
+#### Stability (Phase 1-4)
+- **Heartbeat Monitor** — Application-level ping/pong with RTT measurement (5s interval)
+- **Smart Reconnector** — Exponential backoff (100ms→30s) with auto transport switch
+- **Quality Monitor** — Per-session scoring (latency/jitter/loss) with degrade callback
+- **DPI Detector** — Passive failure pattern analysis with transport recommendation
+- **Buffer Tuner** — Auto-adjust buffers based on BDP (Bandwidth-Delay Product)
+- **Warmup Pool** — Pre-connected sessions for instant reconnect
+- **Quality-Aware Load Balancing** — Pool routes streams to best-scoring session
+
+#### Script
+- **10 transports** in all menus (+ faketcp)
+- **SNI Spoofing option** in client setup
+- **Performance profile selection** (balanced/upload_boost/high_throughput/low_cpu)
+- **WireGuard forward option** in client setup + multi-tunnel
+- **WireGuard auto-setup** menu (generates keys + configs + installs interface)
+- **Port range support** (e.g., 2000-2010)
+- **Port conflict detection** with suggestions
+
+#### Other
+- **Port utilities** — validate, conflict check, auto-suggest free port
+- Config validator accepts `faketcp` transport
+- `AntiDPIConfig` extended with SNI spoof + domain fronting fields
+
+### Fixed
+- Heartbeat now actually registers sessions (was no-op before)
+- Quality monitor receives RTT data from heartbeat pings
+- Pool uses quality score in load balancing (not just stream count)
+- Buffer tuner output applied to new sessions
+- Reconnector switches transport on DPI recommendation
+- Transport menus aligned across all script functions
+
+---
+
+## [2.0.1] - 2026-05-31
+
+### Fixed
+- Transport options aligned across multi-tunnel menus
+- Added h2mux and grpc to multi-tunnel client/server
+- Added TLS option for tcpmux in multi-tunnel
+- Added REALITY config in multi-tunnel client/server
+
+---
+
 ## [2.0.0] - 2026-05-31
 
 ### 🚀 Major Release — Full Integration

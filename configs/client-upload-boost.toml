@@ -1,0 +1,89 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  iPShadowT — Upload Boost Profile
+#  Optimized for maximum upload speed
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#  Use this when upload speed is important:
+#  - Video calls (Zoom, Google Meet)
+#  - File uploads (cloud storage)
+#  - Live streaming (OBS)
+#  - Gaming (low latency + upload)
+#
+#  Trade-offs:
+#  - Less stealth (anti-DPI features disabled)
+#  - Higher CPU usage
+#  - More bandwidth used (larger buffers)
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+mode = "client"
+log_level = "info"
+transport = "tcpmux"                    # tcpmux = fastest, least overhead
+remote_addr = "your-server.com:443"
+password = "your-password"
+
+# ── Multiplexing (aggressive) ──
+[mux]
+concurrency = 8                         # More sessions = more parallel upload
+frame_size = 65536                      # 64KB frames (less overhead per byte)
+recv_buffer = 16777216                  # 16MB receive buffer
+stream_buffer = 8388608                 # 8MB stream buffer
+max_streams = 2048                      # More streams allowed
+
+# ── Heartbeat ──
+[heartbeat]
+enabled = true
+interval = 10
+timeout = 20
+
+# ── Performance (upload optimized) ──
+[performance]
+nodelay = true                          # CRITICAL: disable Nagle algorithm
+keepalive = 5                           # Aggressive keepalive
+send_buffer = 16777216                  # 16MB send buffer (SO_SNDBUF)
+recv_buffer = 16777216                  # 16MB recv buffer (SO_RCVBUF)
+buffer_profile = "upload_boost"         # Upload-optimized profile
+workers = 8                             # More workers
+kernel_tuning = true                    # Auto-tune kernel
+
+# ── Anti-DPI (minimal — for speed) ──
+[anti_dpi]
+enabled = false                         # DISABLED for max speed
+# If you need stealth, enable only uTLS:
+# enabled = true
+# utls_fingerprint = "chrome"
+# fragment = false                      # Fragment kills upload speed
+# padding = false                       # Padding adds overhead
+# traffic_shape = false                 # Shaping limits throughput
+
+# ── Port Forwarding ──
+[[forwards]]
+name = "socks5"
+type = "socks5"
+listen = "0.0.0.0:1080"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Alternative: KCP transport (UDP-based)
+#  Even faster upload on lossy networks
+#  Change transport = "kcp" and add:
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [kcp]
+# mode = "fast3"                        # Maximum speed mode
+# mtu = 1400                            # Slightly larger MTU
+# snd_wnd = 2048                        # Large send window
+# rcv_wnd = 2048                        # Large receive window
+# data_shard = 10                       # FEC: 10 data shards
+# par_shard = 3                         # FEC: 3 parity (30% redundancy)
+# sock_buf = 16777216                   # 16MB socket buffer
+# encryption = "aes-128-gcm"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Kernel tuning (applied automatically if kernel_tuning = true)
+#  Or apply manually:
+#    sysctl -w net.core.wmem_max=16777216
+#    sysctl -w net.ipv4.tcp_wmem="4096 524288 16777216"
+#    sysctl -w net.ipv4.tcp_congestion_control=bbr
+#    sysctl -w net.ipv4.tcp_slow_start_after_idle=0
+#    sysctl -w net.ipv4.tcp_window_scaling=1
+#    sysctl -w net.ipv4.tcp_notsent_lowat=16384
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -7,7 +7,7 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ─── Constants ────────────────────────────────────
-VERSION="2.0.0"
+VERSION="2.2.0"
 GITHUB_REPO="iPmartNetwork/iPShadowT"
 BINARY_NAME="ipshadowt"
 INSTALL_DIR="/usr/local/bin"
@@ -337,17 +337,18 @@ do_configure() {
     print_banner
     echo -e "  ${W}[ CONFIGURE ]${N}"
     echo ""
-    echo -e "  ${C}1)${N} Setup as ${W}Iran Server${N}     ${D}(Client - connects to foreign)${N}"
-    echo -e "  ${C}2)${N} Setup as ${W}Foreign Server${N}  ${D}(Server - accepts connections)${N}"
-    echo -e "  ${C}3)${N} Edit config manually"
-    echo -e "  ${C}4)${N} Show current config"
-    echo -e "  ${C}5)${N} Test transport to server"
-    echo -e "  ${C}6)${N} Add port forward"
-    echo -e "  ${C}7)${N} Generate REALITY keys"
-    echo -e "  ${C}8)${N} Generate random password"
-    echo -e "  ${C}9)${N} Export client config"
+    echo -e "  ${C} 1)${N} Setup as ${W}Iran Server${N}     ${D}(Client - connects to foreign)${N}"
+    echo -e "  ${C} 2)${N} Setup as ${W}Foreign Server${N}  ${D}(Server - accepts connections)${N}"
+    echo -e "  ${C} 3)${N} Edit config manually"
+    echo -e "  ${C} 4)${N} Show current config"
+    echo -e "  ${C} 5)${N} Test transport to server"
+    echo -e "  ${C} 6)${N} Add port forward"
+    echo -e "  ${C} 7)${N} Setup WireGuard tunnel  ${D}(auto keys + config both sides)${N}"
+    echo -e "  ${C} 8)${N} Generate REALITY keys"
+    echo -e "  ${C} 9)${N} Generate random password"
+    echo -e "  ${C}10)${N} Export client config"
     echo ""
-    echo -e "  ${C}0)${N} Back"
+    echo -e "  ${C} 0)${N} Back"
     echo ""
     msg_ask "Choice: "; read -r choice
 
@@ -358,9 +359,10 @@ do_configure() {
         4) echo ""; [ -f "${CONFIG_DIR}/config.toml" ] && cat "${CONFIG_DIR}/config.toml" || msg_err "No config found" ;;
         5) msg_ask "Server IP/domain: "; read -r ip; test_transport "$ip" ;;
         6) add_port_forward ;;
-        7) is_installed && ${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys || msg_err "Not installed" ;;
-        8) echo ""; msg_ok "Password: $(gen_pass)" ;;
-        9) export_config ;;
+        7) setup_wireguard ;;
+        8) is_installed && ${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys || msg_err "Not installed" ;;
+        9) echo ""; msg_ok "Password: $(gen_pass)" ;;
+        10) export_config ;;
         0) return ;;
         *) msg_err "Invalid option" ;;
     esac
@@ -390,15 +392,16 @@ setup_client() {
     # Transport selection
     echo ""
     echo -e "  ${W}Transport:${N}"
-    echo -e "    ${C}1)${N} reality      ${D}— recommended, max stealth${N}"
-    echo -e "    ${C}2)${N} shadowtls    ${D}— no cert needed, good stealth${N}"
-    echo -e "    ${C}3)${N} wsmux        ${D}— WebSocket, CDN compatible${N}"
-    echo -e "    ${C}4)${N} h2mux        ${D}— HTTP/2, looks like browsing${N}"
-    echo -e "    ${C}5)${N} grpc         ${D}— gRPC, looks like API traffic${N}"
-    echo -e "    ${C}6)${N} tcpmux       ${D}— simple TCP, fastest${N}"
-    echo -e "    ${C}7)${N} kcp          ${D}— UDP, works when TCP blocked${N}"
-    echo -e "    ${C}8)${N} quic         ${D}— QUIC/UDP, 0-RTT fast${N}"
-    echo -e "    ${C}9)${N} cdn          ${D}— via Cloudflare CDN (IP hidden)${N}"
+    echo -e "    ${C} 1)${N} reality      ${D}— recommended, max stealth${N}"
+    echo -e "    ${C} 2)${N} shadowtls    ${D}— no cert needed, good stealth${N}"
+    echo -e "    ${C} 3)${N} wsmux        ${D}— WebSocket, CDN compatible${N}"
+    echo -e "    ${C} 4)${N} h2mux        ${D}— HTTP/2, looks like browsing${N}"
+    echo -e "    ${C} 5)${N} grpc         ${D}— gRPC, looks like API traffic${N}"
+    echo -e "    ${C} 6)${N} tcpmux       ${D}— simple TCP, fastest${N}"
+    echo -e "    ${C} 7)${N} kcp          ${D}— UDP, works when TCP blocked${N}"
+    echo -e "    ${C} 8)${N} quic         ${D}— QUIC/UDP, 0-RTT fast${N}"
+    echo -e "    ${C} 9)${N} faketcp      ${D}— UDP over fake TCP (bypass UDP block)${N}"
+    echo -e "    ${C}10)${N} cdn          ${D}— via Cloudflare CDN (IP hidden)${N}"
     echo ""
     msg_ask "Choice [1]: "; read -r tc
     local transport="reality"
@@ -410,12 +413,13 @@ setup_client() {
         6) transport="tcpmux" ;;
         7) transport="kcp" ;;
         8) transport="quic" ;;
-        9) transport="wsmux" ;;
+        9) transport="faketcp" ;;
+        10) transport="wsmux" ;;
     esac
 
     # CDN mode
     local cdn_section=""
-    if [ "$tc" = "9" ]; then
+    if [ "$tc" = "10" ]; then
         echo ""
         echo -e "  ${W}CDN Setup:${N}"
         msg_ask "CDN domain (e.g. your-domain.com): "; read -r cdn_domain
@@ -438,7 +442,7 @@ early_data = true"
 
     # TLS for tcpmux
     local tls_section=""
-    if [ "$transport" = "tcpmux" ] && [ "$tc" != "9" ]; then
+    if [ "$transport" = "tcpmux" ] && [ "$tc" != "10" ]; then
         echo ""
         msg_ask "Enable TLS for tcpmux? [y/N]: "; read -r tls_ans
         if [[ "$tls_ans" =~ ^[Yy]$ ]]; then
@@ -484,6 +488,54 @@ enabled = true
 listen = \"127.0.0.1:${health_port}\""
     fi
 
+    # SNI Spoofing
+    local sni_section=""
+    msg_ask "Enable SNI spoofing? [y/N]: "; read -r sni_ans
+    if [[ "$sni_ans" =~ ^[Yy]$ ]]; then
+        msg_ask "Fake SNI domain [www.google.com]: "; read -r fake_sni
+        fake_sni=${fake_sni:-www.google.com}
+        echo -e "    ${C}1)${N}split ${C}2)${N}replace ${C}3)${N}double"
+        msg_ask "Method [1]: "; read -r sm
+        local sni_method="split"
+        case $sm in 2) sni_method="replace";; 3) sni_method="double";; esac
+        sni_section="sni_spoof = true
+sni_spoof_domain = \"${fake_sni}\"
+sni_spoof_method = \"${sni_method}\""
+    fi
+
+    # Performance profile
+    echo ""
+    echo -e "  ${W}Performance profile:${N}"
+    echo -e "    ${C}1)${N} balanced       ${D}— default, good for most${N}"
+    echo -e "    ${C}2)${N} upload_boost   ${D}— max upload speed (less stealth)${N}"
+    echo -e "    ${C}3)${N} high_throughput ${D}— max download speed${N}"
+    echo -e "    ${C}4)${N} low_cpu        ${D}— minimal resource usage${N}"
+    msg_ask "Choice [1]: "; read -r perf_choice
+    local perf_profile="balanced"
+    local perf_concurrency=4
+    local perf_frame=32768
+    case $perf_choice in
+        2) perf_profile="upload_boost"; perf_concurrency=8; perf_frame=65536 ;;
+        3) perf_profile="high_throughput"; perf_concurrency=8; perf_frame=65536 ;;
+        4) perf_profile="low_cpu"; perf_concurrency=2; perf_frame=16384 ;;
+    esac
+
+    # WireGuard forward option
+    local wg_fwd_section=""
+    msg_ask "Add WireGuard forward? [y/N]: "; read -r wg_fwd_ans
+    if [[ "$wg_fwd_ans" =~ ^[Yy]$ ]]; then
+        local wg_port=$(find_free_port 51820)
+        msg_ask "WireGuard UDP port [${wg_port}]: "; read -r uwg; wg_port=${uwg:-$wg_port}
+        msg_ask "WireGuard remote [10.66.66.1:51820]: "; read -r wg_remote
+        wg_remote=${wg_remote:-10.66.66.1:51820}
+        wg_fwd_section="
+[[forwards]]
+name = \"wireguard\"
+type = \"wireguard\"
+listen = \"0.0.0.0:${wg_port}\"
+remote = \"${wg_remote}\""
+    fi
+
     # Write config
     mkdir -p "${CONFIG_DIR}"
     cat > "${CONFIG_DIR}/config.toml" << EOF
@@ -496,8 +548,8 @@ password = "${password}"
 ${tls_section}
 
 [mux]
-concurrency = 4
-frame_size = 32768
+concurrency = ${perf_concurrency}
+frame_size = ${perf_frame}
 
 [heartbeat]
 enabled = true
@@ -507,7 +559,7 @@ timeout = 40
 [performance]
 nodelay = true
 keepalive = 15
-buffer_profile = "balanced"
+buffer_profile = "${perf_profile}"
 
 [anti_dpi]
 enabled = true
@@ -516,6 +568,7 @@ fragment = true
 fragment_size = "40-80"
 padding = true
 padding_size = "16-256"
+${sni_section}
 ${cdn_section}
 ${health_section}
 ${reality_section}
@@ -524,6 +577,7 @@ ${reality_section}
 name = "socks5"
 type = "socks5"
 listen = "0.0.0.0:${socks_port}"
+${wg_fwd_section}
 EOF
 
     # Update systemd with watchdog
@@ -580,6 +634,7 @@ setup_server() {
     echo -e "    ${C}6)${N} tcpmux       ${D}— simple${N}"
     echo -e "    ${C}7)${N} kcp          ${D}— UDP${N}"
     echo -e "    ${C}8)${N} quic         ${D}— QUIC/UDP${N}"
+    echo -e "    ${C}9)${N} faketcp      ${D}— UDP over fake TCP${N}"
     echo ""
     msg_ask "Choice [1]: "; read -r tc
     local transport="reality"
@@ -591,6 +646,7 @@ setup_server() {
         6) transport="tcpmux" ;;
         7) transport="kcp" ;;
         8) transport="quic" ;;
+        9) transport="faketcp" ;;
     esac
 
     # TLS for tcpmux
@@ -758,6 +814,222 @@ export_config() {
         echo ""
         cat "${CONFIG_DIR}/config.toml"
     fi
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  WIREGUARD SETUP
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+setup_wireguard() {
+    echo ""
+    print_line
+    echo -e "  ${W}WIREGUARD TUNNEL SETUP${N}"
+    echo -e "  ${D}Auto-generates matching keys for both server and client${N}"
+    print_line
+    echo ""
+
+    echo -e "  ${W}This server is:${N}"
+    echo -e "    ${C}1)${N} Foreign (WireGuard server — abroad)"
+    echo -e "    ${C}2)${N} Iran (WireGuard client — behind filter)"
+    echo ""
+    msg_ask "Choice [1]: "; read -r wg_role
+    wg_role=${wg_role:-1}
+
+    # WireGuard port
+    local wg_port
+    ask_port "WireGuard UDP port" "51820" wg_port
+
+    # Subnet
+    msg_ask "Tunnel subnet [10.66.66]: "; read -r wg_subnet
+    wg_subnet=${wg_subnet:-10.66.66}
+
+    # Generate keys using iPShadowT binary or openssl
+    echo ""
+    msg_step "Generating WireGuard keys (Curve25519)..."
+
+    local server_priv server_pub client_priv client_pub psk
+
+    if is_installed; then
+        # Use iPShadowT binary for key generation
+        local keys_json=$(${INSTALL_DIR}/${BINARY_NAME} --gen-wg-keys 2>/dev/null)
+        if [ -n "$keys_json" ]; then
+            server_priv=$(echo "$keys_json" | grep -o '"server_private":"[^"]*"' | cut -d'"' -f4)
+            server_pub=$(echo "$keys_json" | grep -o '"server_public":"[^"]*"' | cut -d'"' -f4)
+            client_priv=$(echo "$keys_json" | grep -o '"client_private":"[^"]*"' | cut -d'"' -f4)
+            client_pub=$(echo "$keys_json" | grep -o '"client_public":"[^"]*"' | cut -d'"' -f4)
+            psk=$(echo "$keys_json" | grep -o '"psk":"[^"]*"' | cut -d'"' -f4)
+        fi
+    fi
+
+    # Fallback: use wg command if available
+    if [ -z "$server_priv" ] && command -v wg &>/dev/null; then
+        server_priv=$(wg genkey)
+        server_pub=$(echo "$server_priv" | wg pubkey)
+        client_priv=$(wg genkey)
+        client_pub=$(echo "$client_priv" | wg pubkey)
+        psk=$(wg genpsk)
+    fi
+
+    # Fallback: use openssl
+    if [ -z "$server_priv" ]; then
+        server_priv=$(openssl rand -base64 32)
+        server_pub=$(echo "$server_priv" | openssl dgst -sha256 -binary | base64)
+        client_priv=$(openssl rand -base64 32)
+        client_pub=$(echo "$client_priv" | openssl dgst -sha256 -binary | base64)
+        psk=$(openssl rand -base64 32)
+        msg_warn "Using openssl fallback (install wireguard-tools for proper keys)"
+    fi
+
+    if [ -z "$server_priv" ]; then
+        msg_err "Failed to generate keys. Install wireguard-tools: apt install wireguard-tools"
+        return
+    fi
+
+    msg_ok "Keys generated successfully"
+
+    # Get server IP
+    local server_ip
+    if [ "$wg_role" = "1" ]; then
+        server_ip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+    else
+        msg_ask "Foreign server IP: "; read -r server_ip
+        [ -z "$server_ip" ] && { msg_err "Server IP required"; return; }
+    fi
+
+    # Build configs
+    local server_conf="[Interface]
+PrivateKey = ${server_priv}
+Address = ${wg_subnet}.1/24
+ListenPort = ${wg_port}
+MTU = 1420
+
+[Peer]
+PublicKey = ${client_pub}
+AllowedIPs = ${wg_subnet}.2/32
+PresharedKey = ${psk}"
+
+    local client_conf="[Interface]
+PrivateKey = ${client_priv}
+Address = ${wg_subnet}.2/24
+DNS = 1.1.1.1, 8.8.8.8
+MTU = 1420
+
+[Peer]
+PublicKey = ${server_pub}
+AllowedIPs = 0.0.0.0/0
+Endpoint = ${server_ip}:${wg_port}
+PresharedKey = ${psk}
+PersistentKeepalive = 25"
+
+    # Save configs
+    mkdir -p "${CONFIG_DIR}/wireguard"
+
+    if [ "$wg_role" = "1" ]; then
+        # This is the foreign server
+        echo "$server_conf" > "${CONFIG_DIR}/wireguard/wg0.conf"
+        echo "$client_conf" > "${CONFIG_DIR}/wireguard/client.conf"
+        msg_ok "Server config: ${CONFIG_DIR}/wireguard/wg0.conf"
+        msg_ok "Client config: ${CONFIG_DIR}/wireguard/client.conf"
+
+        # Also add WireGuard forward to iPShadowT config if exists
+        for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
+            [ -f "$conf" ] || continue
+            if grep -q '^mode = "server"' "$conf" 2>/dev/null; then
+                if ! grep -q 'type = "wireguard"' "$conf" 2>/dev/null; then
+                    echo "" >> "$conf"
+                    echo '[[forwards]]' >> "$conf"
+                    echo 'name = "wireguard"' >> "$conf"
+                    echo 'type = "wireguard"' >> "$conf"
+                    echo "listen = \"0.0.0.0:${wg_port}\"" >> "$conf"
+                    echo "remote = \"127.0.0.1:${wg_port}\"" >> "$conf"
+                    msg_ok "WireGuard forward added to $(basename $conf)"
+                fi
+                break
+            fi
+        done
+
+        # Setup WireGuard interface
+        msg_ask "Setup WireGuard interface now? [Y/n]: "; read -r wg_setup
+        if [[ "${wg_setup:-y}" =~ ^[Yy]$ ]]; then
+            setup_wg_interface "${CONFIG_DIR}/wireguard/wg0.conf"
+        fi
+
+    else
+        # This is the Iran server
+        echo "$client_conf" > "${CONFIG_DIR}/wireguard/wg0.conf"
+        echo "$server_conf" > "${CONFIG_DIR}/wireguard/server.conf"
+        msg_ok "Client config: ${CONFIG_DIR}/wireguard/wg0.conf"
+        msg_ok "Server config (give to foreign): ${CONFIG_DIR}/wireguard/server.conf"
+
+        # Add WireGuard forward to iPShadowT client config
+        for conf in ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/tunnel-*.toml; do
+            [ -f "$conf" ] || continue
+            if grep -q '^mode = "client"' "$conf" 2>/dev/null; then
+                if ! grep -q 'type = "wireguard"' "$conf" 2>/dev/null; then
+                    echo "" >> "$conf"
+                    echo '[[forwards]]' >> "$conf"
+                    echo 'name = "wireguard"' >> "$conf"
+                    echo 'type = "wireguard"' >> "$conf"
+                    echo "listen = \"0.0.0.0:${wg_port}\"" >> "$conf"
+                    echo "remote = \"${wg_subnet}.1:${wg_port}\"" >> "$conf"
+                    msg_ok "WireGuard forward added to $(basename $conf)"
+                fi
+                break
+            fi
+        done
+    fi
+
+    # Display summary
+    echo ""
+    print_line
+    echo -e "  ${G}✓ WIREGUARD CONFIGURED${N}"
+    print_line
+    echo -e "  Subnet:      ${W}${wg_subnet}.0/24${N}"
+    echo -e "  Server IP:   ${W}${wg_subnet}.1${N}"
+    echo -e "  Client IP:   ${W}${wg_subnet}.2${N}"
+    echo -e "  Port:        ${W}${wg_port} (UDP)${N}"
+    echo -e "  Endpoint:    ${W}${server_ip}:${wg_port}${N}"
+    print_line
+    echo ""
+    echo -e "  ${W}Client config (for phone/laptop):${N}"
+    echo ""
+    if [ "$wg_role" = "1" ]; then
+        cat "${CONFIG_DIR}/wireguard/client.conf"
+    else
+        cat "${CONFIG_DIR}/wireguard/wg0.conf"
+    fi
+    echo ""
+    print_line
+}
+
+# Setup WireGuard network interface
+setup_wg_interface() {
+    local conf_file=$1
+
+    # Install wireguard if needed
+    if ! command -v wg &>/dev/null; then
+        msg_step "Installing WireGuard..."
+        apt-get install -y -qq wireguard wireguard-tools >/dev/null 2>&1 || \
+        yum install -y -q wireguard-tools >/dev/null 2>&1 || \
+        { msg_err "Failed to install WireGuard"; return 1; }
+    fi
+
+    # Copy config
+    cp "$conf_file" /etc/wireguard/wg0.conf
+    chmod 600 /etc/wireguard/wg0.conf
+
+    # Enable IP forwarding
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+
+    # Start interface
+    wg-quick up wg0 2>/dev/null && msg_ok "WireGuard interface wg0 is UP" || {
+        # If already up, restart
+        wg-quick down wg0 2>/dev/null
+        wg-quick up wg0 2>/dev/null && msg_ok "WireGuard interface wg0 restarted" || msg_err "Failed to start wg0"
+    }
+
+    # Enable on boot
+    systemctl enable wg-quick@wg0 >/dev/null 2>&1
+    msg_ok "WireGuard enabled on boot"
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1041,14 +1313,14 @@ add_client_tunnel() {
     msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
     echo ""
-    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic ${C}9)${N}cdn"
+    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic ${C}9)${N}faketcp ${C}10)${N}cdn"
     msg_ask "Transport [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="h2mux";; 5) transport="grpc";; 6) transport="tcpmux";; 7) transport="kcp";; 8) transport="quic";; 9) transport="wsmux";; esac
+    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="h2mux";; 5) transport="grpc";; 6) transport="tcpmux";; 7) transport="kcp";; 8) transport="quic";; 9) transport="faketcp";; 10) transport="wsmux";; esac
 
     # CDN
     local cdn_section=""
-    if [ "$tc" = "9" ]; then
+    if [ "$tc" = "10" ]; then
         msg_ask "CDN domain: "; read -r cdn_domain
         [ -z "$cdn_domain" ] && { msg_err "Required"; return; }
         ip="$cdn_domain"; port="443"
@@ -1094,6 +1366,23 @@ short_id = \"${short_id}\""
         msg_warn "Port ${sp} in use!"
         sp=$(find_free_port $((sp+1)))
         msg_info "Using ${sp} instead"
+    fi
+
+    # WireGuard forward option
+    local wg_section=""
+    msg_ask "Also add WireGuard forward? [y/N]: "; read -r wg_ans
+    if [[ "$wg_ans" =~ ^[Yy]$ ]]; then
+        local wg_port=$(find_free_port 51820)
+        msg_ask "WireGuard UDP port [${wg_port}]: "; read -r uwg; wg_port=${uwg:-$wg_port}
+        msg_ask "WireGuard remote (server-side endpoint) [10.66.66.1:51820]: "; read -r wg_remote
+        wg_remote=${wg_remote:-10.66.66.1:51820}
+        wg_section="
+[[forwards]]
+name = \"wireguard\"
+type = \"wireguard\"
+listen = \"0.0.0.0:${wg_port}\"
+remote = \"${wg_remote}\"
+"
     fi
 
     # Port forwards (supports ranges: 443,8443,2000-2010)
@@ -1149,6 +1438,7 @@ listen = "127.0.0.1:0"
 name = "socks5-${tname}"
 type = "socks5"
 listen = "0.0.0.0:${sp}"
+${wg_section}
 ${fwd_section}
 EOF
 
@@ -1193,10 +1483,10 @@ add_server_tunnel() {
     fi
     msg_ask "Password [auto]: "; read -r pass; [ -z "$pass" ] && pass=$(gen_pass)
 
-    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic"
+    echo -e "  ${C}1)${N}reality ${C}2)${N}shadowtls ${C}3)${N}wsmux ${C}4)${N}h2mux ${C}5)${N}grpc ${C}6)${N}tcpmux ${C}7)${N}kcp ${C}8)${N}quic ${C}9)${N}faketcp"
     msg_ask "Transport [1]: "; read -r tc
     local transport="reality"
-    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="h2mux";; 5) transport="grpc";; 6) transport="tcpmux";; 7) transport="kcp";; 8) transport="quic";; esac
+    case $tc in 2) transport="shadowtls";; 3) transport="wsmux";; 4) transport="h2mux";; 5) transport="grpc";; 6) transport="tcpmux";; 7) transport="kcp";; 8) transport="quic";; 9) transport="faketcp";; esac
 
     # TLS for tcpmux
     local tls_section=""

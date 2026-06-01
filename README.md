@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.0.0-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.2.0-blue?style=flat-square" alt="Version"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows%20%7C%20freebsd-lightgrey?style=flat-square" alt="Platform"/></a>
@@ -39,22 +39,17 @@ iPShadowT is a high-performance, self-contained tunnel engine designed to bypass
 
 Built to survive even the most extreme filtering scenarios — including complete internet shutdowns where only DNS traffic is allowed.
 
-### 🆕 What's New in v2.0.0
+### 🆕 What's New in v2.2.0
 
-- ⚡ **Full QUIC transport** (quic-go, 0-RTT, connection migration)
-- 🔀 **Auto-Failover** with multi-path (priority/round-robin/latency)
-- 🎭 **Traffic Obfuscation** (4 modes: HTTPS mimic, Video, Burst, Constant)
-- 🔒 **DNS Leak Protection** (automatic DoH)
-- ☁️ **CDN Mode** (Cloudflare/Gcore/Arvan — IP hidden)
-- 🧩 **Plugin System** (Transport/Auth/Filter plugins)
-- 📈 **Real-time Dashboard** (WebSocket + live charts)
-- 📡 **Prometheus + Grafana** monitoring stack
-- 🌐 **Cluster Mode** (multi-server with geo-routing)
-- 🗺️ **Split Tunneling** (Iran IP bypass, 200+ CIDRs)
-- ♻️ **Graceful Upgrade** (zero-downtime binary updates)
-- ⚖️ **Per-user Rate Limiting** + Security Manager
-- 🔄 **Config Sync** (encrypted push/pull between servers)
-- 📜 **ACME/Auto-Cert** (automatic TLS certificate management)
+- 🕵️ **SNI Spoofing** — Packet-level SNI manipulation (split/replace/double)
+- 🌐 **Domain Fronting** — Client-side, no server changes needed
+- 🔌 **FakeTCP Transport** — UDP over fake TCP (bypass UDP blocking)
+- 🔗 **Pipeline Architecture** — Chain transports for max stealth
+- 🛡️ **WireGuard Forward** — Use WireGuard client through tunnel (auto key generation)
+- 📈 **Upload Boost Profile** — Optimized for max upload speed
+- 💓 **Stability Engine** — Heartbeat, quality monitor, smart reconnect, DPI detection
+- ⚖️ **Quality-Aware LB** — Routes traffic to best-performing session
+- 🔧 **KCP Tuning** — Fine-grained UDP transport parameters
 
 ---
 

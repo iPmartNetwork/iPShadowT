@@ -255,6 +255,22 @@ func (c *Client) createSession() (*mux.Session, error) {
 		muxConn = &obfuscatedConn{Conn: conn, obf: obfConn}
 	}
 
+	// Apply SNI spoofing if enabled
+	if c.cfg.AntiDPI.Enabled && c.cfg.AntiDPI.SNISpoof {
+		spoofCfg := antidpi.SNISpoofConfig{
+			FakeSNI: c.cfg.AntiDPI.SNISpoofDomain,
+			Method:  antidpi.SpoofMethod(c.cfg.AntiDPI.SNISpoofMethod),
+		}
+		if spoofCfg.FakeSNI == "" {
+			spoofCfg.FakeSNI = "www.google.com"
+		}
+		if spoofCfg.Method == "" {
+			spoofCfg.Method = antidpi.MethodSplit
+		}
+		spoofer := antidpi.NewSNISpoofing(spoofCfg, c.log)
+		muxConn = spoofer.WrapConn(muxConn)
+	}
+
 	// Perform handshake
 	if err := c.handshake(muxConn); err != nil {
 		conn.Close()

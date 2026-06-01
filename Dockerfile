@@ -12,7 +12,7 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags "-s -w -X main.Version=v2.0.0 -X main.BuildTime=$(date -u +%Y%m%d%H%M%S)" \
+    -ldflags "-s -w -X main.Version=v2.2.0 -X main.BuildTime=$(date -u +%Y%m%d%H%M%S)" \
     -o /ipshadowt ./cmd/ipshadowt/
 
 # Final image

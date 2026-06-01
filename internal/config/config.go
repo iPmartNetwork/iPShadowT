@@ -52,6 +52,9 @@ type Config struct {
 
 	// REALITY specific
 	Reality RealityConfig `toml:"reality"`
+
+	// KCP specific
+	KCP KCPConfig `toml:"kcp"`
 }
 
 // MuxConfig configures the multiplexer
@@ -84,20 +87,26 @@ type PerformanceConfig struct {
 	KeepAlive     int    `toml:"keepalive"`      // TCP keepalive in seconds
 	SendBuffer    int    `toml:"send_buffer"`    // SO_SNDBUF
 	RecvBuffer    int    `toml:"recv_buffer"`    // SO_RCVBUF
-	BufferProfile string `toml:"buffer_profile"` // "low_cpu", "balanced", "high_throughput"
+	BufferProfile string `toml:"buffer_profile"` // "low_cpu", "balanced", "high_throughput", "upload_boost"
 	Workers       int    `toml:"workers"`        // Number of worker goroutines
 	KernelTuning  bool   `toml:"kernel_tuning"`  // Auto-tune kernel params
 }
 
 // AntiDPIConfig configures anti-DPI features
 type AntiDPIConfig struct {
-	Enabled       bool   `toml:"enabled"`
+	Enabled         bool   `toml:"enabled"`
 	UTLSFingerprint string `toml:"utls_fingerprint"` // "chrome", "firefox", "safari", "random"
-	Fragment      bool   `toml:"fragment"`           // TLS record fragmentation
-	FragmentSize  string `toml:"fragment_size"`      // "50-100" bytes
-	Padding       bool   `toml:"padding"`            // Random padding
-	PaddingSize   string `toml:"padding_size"`       // "16-256" bytes
-	TrafficShape  bool   `toml:"traffic_shape"`      // Traffic shaping
+	Fragment        bool   `toml:"fragment"`          // TLS record fragmentation
+	FragmentSize    string `toml:"fragment_size"`     // "50-100" bytes
+	Padding         bool   `toml:"padding"`           // Random padding
+	PaddingSize     string `toml:"padding_size"`      // "16-256" bytes
+	TrafficShape    bool   `toml:"traffic_shape"`     // Traffic shaping
+	SNISpoof        bool   `toml:"sni_spoof"`         // SNI spoofing
+	SNISpoofDomain  string `toml:"sni_spoof_domain"`  // Fake SNI domain (e.g., "www.google.com")
+	SNISpoofMethod  string `toml:"sni_spoof_method"`  // "split", "replace", "double"
+	DomainFront     bool   `toml:"domain_front"`      // Domain fronting
+	FrontDomain     string `toml:"front_domain"`      // CDN front domain
+	RealHost        string `toml:"real_host"`         // Actual host (inside TLS)
 }
 
 // ForwardConfig configures port forwarding
@@ -124,6 +133,18 @@ type RealityConfig struct {
 	PublicKey  string   `toml:"public_key"`
 	PrivateKey string   `toml:"private_key"`
 	Dest       string   `toml:"dest"`        // Fallback destination for probes
+}
+
+// KCPConfig configures KCP transport tuning
+type KCPConfig struct {
+	Mode       string `toml:"mode"`        // "normal", "fast", "fast2", "fast3"
+	MTU        int    `toml:"mtu"`         // MTU size (default: 1350)
+	SndWnd     int    `toml:"snd_wnd"`     // Send window size (default: 1024)
+	RcvWnd     int    `toml:"rcv_wnd"`     // Receive window size (default: 1024)
+	DataShard  int    `toml:"data_shard"`  // FEC data shards (default: 10)
+	ParShard   int    `toml:"par_shard"`   // FEC parity shards (default: 3)
+	SockBuf    int    `toml:"sock_buf"`    // Socket buffer size (default: 4MB)
+	Encryption string `toml:"encryption"`  // "aes-128-gcm", "aes-256-gcm", "none"
 }
 
 // HealthConfig configures the health/watchdog endpoint
@@ -253,6 +274,7 @@ func validate(cfg *Config) error {
 		"tcpmux": true, "wsmux": true, "reality": true,
 		"h2mux": true, "shadowtls": true, "grpc": true,
 		"quic": true, "kcp": true, "reverse": true,
+		"faketcp": true,
 	}
 	if !validTransports[cfg.Transport] {
 		return fmt.Errorf("invalid transport: %q", cfg.Transport)

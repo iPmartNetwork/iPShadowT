@@ -34,7 +34,7 @@ import (
 )
 
 // Version is the engine version
-const Version = "v2.0.0"
+const Version = "v2.2.0"
 
 // Author is the project author
 const Author = "iPmart Network (Ali Hassanzadeh)"

@@ -53,6 +53,8 @@ func NewTransport(cfg *config.Config, log *logger.Logger) (Transport, error) {
 		return NewKCP(cfg, log), nil
 	case "reverse":
 		return NewReverse(cfg, log)
+	case "faketcp":
+		return NewFakeTCP(cfg, log), nil
 	default:
 		return NewTCPMux(cfg, log), nil
 	}
