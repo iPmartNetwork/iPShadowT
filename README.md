@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.2.2-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/VERSION"><img src="https://img.shields.io/badge/version-v2.2.3-blue?style=flat-square" alt="Version"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows%20%7C%20freebsd-lightgrey?style=flat-square" alt="Platform"/></a>
@@ -39,12 +39,22 @@ iPShadowT is a high-performance, self-contained tunnel engine designed to bypass
 
 Built to survive even the most extreme filtering scenarios — including complete internet shutdowns where only DNS traffic is allowed.
 
+### 🆕 What's New in v2.2.3
+
+- 🐛 **Direct pool race fix** — safe shutdown when `mux.enabled = false` (CI `-race` clean)
+- ✅ **Recommended release** — use v2.2.3 instead of v2.2.2
+
+<details>
+<summary>Previous: v2.2.2</summary>
+
 ### 🆕 What's New in v2.2.2
 
 - 🔗 **Direct mode aligned** — client and server both support `mux.enabled = false` (upload path works end-to-end)
 - 🛡️ **REALITY fixed** — authentication protocol works with uTLS 1.8
 - 🧰 **CLI tools** — `-validate` and `-doctor` for config checks
 - 🛑 **Graceful shutdown** — SIGTERM/SIGINT drains connections properly
+
+</details>
 
 <details>
 <summary>Previous: v2.2.1</summary>
@@ -293,8 +303,8 @@ docker build -t ipshadowt .
 docker run -v ./config.toml:/etc/ipshadowt/config.toml -p 443:443 -p 443:443/udp ipshadowt
 
 # Or pull from GHCR
-docker pull ghcr.io/ipmartnetwork/ipshadowt:2.2.2
-docker run -v ./config.toml:/etc/ipshadowt/config.toml ghcr.io/ipmartnetwork/ipshadowt:2.2.2
+docker pull ghcr.io/ipmartnetwork/ipshadowt:2.2.3
+docker run -v ./config.toml:/etc/ipshadowt/config.toml ghcr.io/ipmartnetwork/ipshadowt:2.2.3
 ```
 
 ### Monitoring Stack (Prometheus + Grafana)
