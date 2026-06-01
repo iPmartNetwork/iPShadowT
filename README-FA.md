@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/version-v2.2.2-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/version-v2.2.3-blue?style=flat-square" alt="Version"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform"/></a>
@@ -32,11 +32,21 @@ iPShadowT یک موتور تانلینگ با عملکرد بالا و بدون 
 
 ساخته شده برای بقا حتی در شدیدترین سناریوهای فیلترینگ — از جمله قطعی کامل اینترنت که فقط ترافیک DNS اجازه عبور دارد.
 
-### 🆕 تازه‌ها در نسخه ۲.۲.۱
+### 🆕 تازه‌ها در نسخه ۲.۲.۳
 
-- 📤 **رفع کندی آپلود** — بافر TCP، relay 256KB، `kernel_tuning` فعال، پروفایل `upload_boost`
-- 🔧 **مستقل از پورت** — tuning روی هر پورت خودکار اعمال می‌شود
-- 📦 **اسکریپت نصب** — پیش‌فرض upload_boost برای کلاینت ایران
+- 🐛 **رفع race در direct pool** — خاموش شدن امن وقتی `mux.enabled = false`
+- 🔗 **Direct mode** — کلاینت و سرور هم‌راستا (بهترین آپلود)
+- 🛡️ **REALITY** — احراز هویت درست با uTLS 1.8
+- 🧰 **ابزار CLI** — `-validate` و `-doctor`
+- ✅ **نسخه پیشنهادی** — v2.2.3 (نه v2.2.2)
+
+<details>
+<summary>نسخه‌های قبلی: ۲.۲.۲ / ۲.۲.۱</summary>
+
+**v2.2.2:** direct mode، REALITY، graceful shutdown  
+**v2.2.1:** بافر TCP، relay 256KB، `upload_boost`، `kernel_tuning`
+
+</details>
 
 ---
 
