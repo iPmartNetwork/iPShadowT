@@ -2,28 +2,28 @@
 # Build: docker build -t ipshadowt .
 # Run:   docker run -v /path/to/config.toml:/etc/ipshadowt/config.toml ipshadowt
 
-FROM golang:1.24-alpine AS builder
-
-RUN apk add --no-cache git ca-certificates
+FROM golang:1.24 AS builder
 
 ENV GOTOOLCHAIN=local
-ENV GONOSUMCHECK=*
-ENV GOFLAGS=-mod=mod
+ENV CGO_ENABLED=0
+ENV GOOS=linux
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download -x 2>&1 | tail -5 || true
+RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN go build \
     -trimpath \
     -ldflags "-s -w -X main.Version=v2.2.0" \
     -o /ipshadowt ./cmd/ipshadowt/
 
 # Final image
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ca-certificates iptables ip6tables curl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates iptables curl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /ipshadowt /usr/local/bin/ipshadowt
 
