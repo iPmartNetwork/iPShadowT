@@ -42,8 +42,10 @@ type Client struct {
 	warmup      *stability.WarmupPool
 
 	// Direct pool (when mux disabled)
-	directPool  chan net.Conn
-	poolSize    int
+	directPoolMu sync.Mutex
+	directPool    chan net.Conn
+	directClosed  bool
+	poolSize      int
 }
 
 // New creates a new client instance
@@ -564,33 +566,75 @@ func (c *Client) dialAndHandshake() (net.Conn, error) {
 }
 
 // getDirectConn gets a pre-connected connection from the pool
-// If pool is empty, dials a new one on-demand
 func (c *Client) getDirectConn() (net.Conn, error) {
-	// Try to get from pool (non-blocking)
+	c.directPoolMu.Lock()
+	ch := c.directPool
+	closed := c.directClosed
+	c.directPoolMu.Unlock()
+
+	if closed || ch == nil {
+		return c.dialAndHandshake()
+	}
+
 	select {
-	case conn := <-c.directPool:
-		// Got a pre-connected one — refill in background
+	case conn, ok := <-ch:
+		if !ok {
+			return c.dialAndHandshake()
+		}
 		go c.refillPool(1)
 		return conn, nil
 	default:
-		// Pool empty — dial on demand
 		return c.dialAndHandshake()
+	}
+}
+
+func (c *Client) putDirectConn(conn net.Conn) bool {
+	c.directPoolMu.Lock()
+	defer c.directPoolMu.Unlock()
+	if c.directClosed || c.directPool == nil {
+		return false
+	}
+	select {
+	case c.directPool <- conn:
+		return true
+	default:
+		return false
 	}
 }
 
 // refillPool adds connections back to the pool in background
 func (c *Client) refillPool(count int) {
 	for i := 0; i < count; i++ {
+		select {
+		case <-c.done:
+			return
+		default:
+		}
 		conn, err := c.dialAndHandshake()
 		if err != nil {
 			continue
 		}
-		select {
-		case c.directPool <- conn:
-		default:
-			// Pool full, close extra
+		if !c.putDirectConn(conn) {
 			conn.Close()
+			return
 		}
+	}
+}
+
+func (c *Client) closeDirectPool() {
+	c.directPoolMu.Lock()
+	if c.directClosed || c.directPool == nil {
+		c.directPoolMu.Unlock()
+		return
+	}
+	c.directClosed = true
+	ch := c.directPool
+	c.directPool = nil
+	c.directPoolMu.Unlock()
+
+	close(ch)
+	for conn := range ch {
+		conn.Close()
 	}
 }
 
@@ -606,7 +650,16 @@ func (c *Client) maintainDirectPool() {
 		case <-c.done:
 			return
 		case <-ticker.C:
-			current := len(c.directPool)
+			c.directPoolMu.Lock()
+			current := 0
+			if c.directPool != nil {
+				current = len(c.directPool)
+			}
+			closed := c.directClosed
+			c.directPoolMu.Unlock()
+			if closed {
+				return
+			}
 			if current < c.poolSize/2 {
 				needed := c.poolSize - current
 				c.log.Debug("Direct pool: refilling %d connections (current: %d)", needed, current)
@@ -634,13 +687,8 @@ func (c *Client) Stop() {
 	// Close session pool
 	c.pool.Close()
 
-	// Drain direct pool
-	if c.directPool != nil {
-		close(c.directPool)
-		for conn := range c.directPool {
-			conn.Close()
-		}
-	}
+	// Drain direct pool (after forwarders stop — no new getDirectConn calls)
+	c.closeDirectPool()
 
 	// Close transport
 	c.transport.Close()

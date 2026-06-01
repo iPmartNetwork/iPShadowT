@@ -4,7 +4,7 @@
 
 FROM golang:1.25-bookworm AS builder
 
-ARG VERSION=v2.2.2
+ARG VERSION=v2.2.3
 
 ENV CGO_ENABLED=0
 ENV GOOS=linux

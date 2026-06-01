@@ -7,7 +7,7 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ─── Constants ────────────────────────────────────
-VERSION="2.2.2"
+VERSION="2.2.3"
 GITHUB_REPO="iPmartNetwork/iPShadowT"
 BINARY_NAME="ipshadowt"
 INSTALL_DIR="/usr/local/bin"

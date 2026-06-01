@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	Version   = "v2.2.2"
+	Version   = "v2.2.3"
 	Commit    = "unknown"
 	BuildTime = "unknown"
 	Author    = "iPmart Network (Ali Hassanzadeh)"

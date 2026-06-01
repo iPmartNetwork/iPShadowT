@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.3] - 2026-06-01
+
+### Fixed
+- **Direct pool data race** — `Stop()` no longer closes pool while `refillPool` is sending (CI `-race` failure)
+
+---
+
 ## [2.2.2] - 2026-06-01
 
 ### Fixed
