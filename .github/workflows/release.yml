@@ -7,7 +7,7 @@ on:
 
 env:
   BINARY_NAME: ipshadowt
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.24'
   AUTHOR: 'iPmart Network (Ali Hassanzadeh)'
 
 jobs:
