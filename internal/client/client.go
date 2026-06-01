@@ -37,6 +37,10 @@ type Client struct {
 	dpiDetect   *stability.DPIDetector
 	bufferTuner *stability.BufferTuner
 	warmup      *stability.WarmupPool
+
+	// Direct pool (when mux disabled)
+	directPool  chan net.Conn
+	poolSize    int
 }
 
 // New creates a new client instance
@@ -163,7 +167,11 @@ func (c *Client) Start() error {
 			return fmt.Errorf("failed to connect: %w", err)
 		}
 	} else {
-		c.log.Info("⚡ Direct relay mode (mux disabled) — no session pooling")
+		c.log.Info("⚡ Direct relay mode (mux disabled) — pre-connecting pool...")
+		// Pre-connect a pool of raw connections (handshake done once per connection)
+		if err := c.initDirectPool(); err != nil {
+			return fmt.Errorf("failed to init direct pool: %w", err)
+		}
 	}
 
 	// Start port forwarders
@@ -185,6 +193,10 @@ func (c *Client) Start() error {
 		c.heartbeat.Start()
 		c.quality.Start()
 		c.warmup.Start()
+	} else {
+		// Maintain direct pool
+		c.wg.Add(1)
+		go c.maintainDirectPool()
 	}
 
 	return nil
@@ -348,20 +360,11 @@ func (c *Client) startForwarders() error {
 			return fmt.Errorf("failed to create forwarder %q: %w", fwdCfg.Name, err)
 		}
 
-		// If mux is disabled, use direct dial (no multiplexer overhead)
+		// If mux is disabled, use direct pool (pre-connected, no handshake per request)
 		if !c.cfg.Mux.Enabled {
-			c.log.Info("  ⚡ Direct mode (no mux) — each connection dials fresh")
+			c.log.Info("  ⚡ Direct mode — using pre-connected pool")
 			fwd.SetDirectDial(func() (net.Conn, error) {
-				conn, err := c.transport.Dial()
-				if err != nil {
-					return nil, err
-				}
-				// Handshake
-				if err := c.handshake(conn); err != nil {
-					conn.Close()
-					return nil, err
-				}
-				return conn, nil
+				return c.getDirectConn()
 			})
 		}
 
@@ -470,6 +473,98 @@ func (c *Client) checkAndReconnect() {
 	}
 }
 
+// initDirectPool pre-connects a pool of raw TCP connections (handshake done once)
+func (c *Client) initDirectPool() error {
+	c.poolSize = 8 // Pre-connect 8 connections
+	c.directPool = make(chan net.Conn, c.poolSize*2)
+
+	c.log.Info("Pre-connecting %d direct connections...", c.poolSize)
+
+	connected := 0
+	for i := 0; i < c.poolSize; i++ {
+		conn, err := c.dialAndHandshake()
+		if err != nil {
+			c.log.Warn("Direct pool connect %d failed: %v", i+1, err)
+			continue
+		}
+		c.directPool <- conn
+		connected++
+	}
+
+	if connected == 0 {
+		return fmt.Errorf("failed to establish any direct connection")
+	}
+
+	c.log.Info("✅ Direct pool ready: %d/%d connections", connected, c.poolSize)
+	return nil
+}
+
+// dialAndHandshake creates a new connection with handshake completed
+func (c *Client) dialAndHandshake() (net.Conn, error) {
+	conn, err := c.transport.Dial()
+	if err != nil {
+		return nil, err
+	}
+	if err := c.handshake(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// getDirectConn gets a pre-connected connection from the pool
+// If pool is empty, dials a new one on-demand
+func (c *Client) getDirectConn() (net.Conn, error) {
+	// Try to get from pool (non-blocking)
+	select {
+	case conn := <-c.directPool:
+		// Got a pre-connected one — refill in background
+		go c.refillPool(1)
+		return conn, nil
+	default:
+		// Pool empty — dial on demand
+		return c.dialAndHandshake()
+	}
+}
+
+// refillPool adds connections back to the pool in background
+func (c *Client) refillPool(count int) {
+	for i := 0; i < count; i++ {
+		conn, err := c.dialAndHandshake()
+		if err != nil {
+			continue
+		}
+		select {
+		case c.directPool <- conn:
+		default:
+			// Pool full, close extra
+			conn.Close()
+		}
+	}
+}
+
+// maintainDirectPool keeps the direct pool filled
+func (c *Client) maintainDirectPool() {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-ticker.C:
+			current := len(c.directPool)
+			if current < c.poolSize/2 {
+				needed := c.poolSize - current
+				c.log.Debug("Direct pool: refilling %d connections (current: %d)", needed, current)
+				c.refillPool(needed)
+			}
+		}
+	}
+}
+
 // Stop gracefully shuts down the client
 func (c *Client) Stop() {
 	close(c.done)
@@ -487,6 +582,14 @@ func (c *Client) Stop() {
 
 	// Close session pool
 	c.pool.Close()
+
+	// Drain direct pool
+	if c.directPool != nil {
+		close(c.directPool)
+		for conn := range c.directPool {
+			conn.Close()
+		}
+	}
 
 	// Close transport
 	c.transport.Close()
