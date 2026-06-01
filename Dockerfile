@@ -2,13 +2,13 @@
 # Build: docker build -t ipshadowt .
 # Run:   docker run -v /path/to/config.toml:/etc/ipshadowt/config.toml ipshadowt
 
-FROM golang:1.24 AS builder
+FROM golang:1.25-bookworm AS builder
 
-ARG VERSION=2.2.1
+ARG VERSION=v2.2.1
 
-ENV GOTOOLCHAIN=local
 ENV CGO_ENABLED=0
 ENV GOOS=linux
+ENV GOPROXY=https://proxy.golang.org,direct
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 RUN go build \
     -trimpath \
-    -ldflags "-s -w -X main.Version=v${VERSION}" \
+    -ldflags "-s -w -X main.Version=${VERSION}" \
     -o /ipshadowt ./cmd/ipshadowt/
 
 # Final image
