@@ -2,7 +2,7 @@
 # Build: docker build -t ipshadowt .
 # Run:   docker run -v /path/to/config.toml:/etc/ipshadowt/config.toml ipshadowt
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
