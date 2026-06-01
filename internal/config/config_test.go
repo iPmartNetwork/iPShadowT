@@ -118,8 +118,30 @@ transport = "tcpmux"
 	if cfg.Mux.StreamBuffer < 8388608 {
 		t.Fatalf("expected mux stream_buffer >= 8MB, got %d", cfg.Mux.StreamBuffer)
 	}
+	if cfg.Mux.Enabled {
+		t.Fatal("expected mux disabled for client upload defaults")
+	}
+	if cfg.Mux.FrameSize < 65535 {
+		t.Fatalf("expected mux frame_size >= 65535, got %d", cfg.Mux.FrameSize)
+	}
 	if !cfg.Performance.Nodelay {
 		t.Fatal("expected nodelay=true for client")
+	}
+}
+
+func TestServerUploadDefaultsDirectMux(t *testing.T) {
+	content := `
+mode = "server"
+bind_addr = "0.0.0.0:443"
+password = "test"
+transport = "tcpmux"
+
+[performance]
+buffer_profile = "upload_boost"
+`
+	cfg := writeAndLoad(t, content)
+	if cfg.Mux.Enabled {
+		t.Fatal("expected mux disabled for upload_boost server defaults")
 	}
 }
 

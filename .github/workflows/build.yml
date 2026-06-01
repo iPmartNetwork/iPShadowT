@@ -21,10 +21,13 @@ jobs:
         run: go mod tidy
 
       - name: Run tests
-        run: go test -v -race ./core/... ./internal/...
+        run: go test -v -race -coverprofile=coverage.out ./core/... ./internal/... ./tests/...
 
-      - name: Run integration tests
-        run: go test -v ./tests/...
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
 
       - name: Run vet
         run: go vet ./...

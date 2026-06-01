@@ -157,52 +157,50 @@ func (p *SessionPool) Add(session *Session) {
 	p.sessions = append(p.sessions, session)
 }
 
-// GetStream gets a stream from the best session (quality + load balanced)
+// GetStream opens a stream using quality-aware round-robin across sessions.
 func (p *SessionPool) GetStream() (*smux.Stream, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if len(p.sessions) == 0 {
 		return nil, fmt.Errorf("no sessions available")
 	}
 
-	// Find best session: combine quality score and stream count
-	var bestSession *Session
-	bestScore := -1
+	type candidate struct {
+		session *Session
+		score   int
+	}
+
+	candidates := make([]candidate, 0, len(p.sessions))
+	bestScore := -1 << 30
 
 	for idx, s := range p.sessions {
 		if s.IsClosed() {
 			continue
 		}
-
-		numStreams := s.NumStreams()
-
-		// Check max streams limit
-		if p.cfg.MaxStreams > 0 && numStreams >= p.cfg.MaxStreams {
+		if p.cfg.MaxStreams > 0 && s.NumStreams() >= p.cfg.MaxStreams {
 			continue
 		}
-
-		// Calculate combined score: quality (0-100) minus load penalty
-		quality := 100
+		score := 100 - s.NumStreams()
 		if p.qualityFunc != nil {
-			quality = p.qualityFunc(idx + 1) // sessionID is 1-based
+			score = p.qualityFunc(idx+1) - s.NumStreams()
 		}
-
-		// Penalize sessions with more streams (10 points per 10 streams)
-		loadPenalty := numStreams
-		score := quality - loadPenalty
-
 		if score > bestScore {
 			bestScore = score
-			bestSession = s
+			candidates = candidates[:0]
+			candidates = append(candidates, candidate{session: s, score: score})
+		} else if score == bestScore {
+			candidates = append(candidates, candidate{session: s, score: score})
 		}
 	}
 
-	if bestSession == nil {
+	if len(candidates) == 0 {
 		return nil, fmt.Errorf("all sessions are closed or at max capacity")
 	}
 
-	return bestSession.OpenStream()
+	p.index++
+	pick := candidates[p.index%len(candidates)]
+	return pick.session.OpenStream()
 }
 
 // RemoveClosed removes closed sessions from the pool

@@ -17,6 +17,7 @@ import (
 	"github.com/iPmart/iPShadowT/internal/ratelimit"
 	"github.com/iPmart/iPShadowT/internal/security"
 	"github.com/iPmart/iPShadowT/internal/transport"
+	"github.com/iPmart/iPShadowT/internal/tunnel"
 	"github.com/iPmart/iPShadowT/internal/utils"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	log       *logger.Logger
 	transport transport.Transport
 	encryptor *crypto.Encryptor
+	listener  net.Listener
 	sessions  sync.Map // map of active sessions
 	done      chan struct{}
 
@@ -96,6 +98,7 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
+	s.listener = listener
 
 	// Start health service
 	if s.healthSvc != nil {
@@ -105,16 +108,14 @@ func (s *Server) Start() error {
 	}
 
 	// Start metrics endpoint
-	if s.metrics != nil {
-		// Metrics on health port + 1 or default 9091
-		metricsAddr := "127.0.0.1:9091"
-		s.metrics.ServePrometheus(metricsAddr)
+	if s.metrics != nil && s.cfg.Metrics.Enabled {
+		s.metrics.ServePrometheus(s.cfg.Metrics.Listen)
 	}
 
 	// Start plugins
 	s.plugins.StartAll()
 
-	s.log.Info("Server listening on %s (transport: %s)", s.cfg.BindAddr, s.transport.Name())
+	s.log.Info("Server listening on %s (transport: %s, mux: %v)", s.cfg.BindAddr, s.transport.Name(), s.cfg.Mux.Enabled)
 
 	go s.acceptLoop(listener)
 
@@ -201,7 +202,14 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Create mux session
+	// Direct mode: one TCP connection = one forwarded flow (matches client direct pool)
+	if !s.cfg.Mux.Enabled {
+		s.log.Debug("Direct session from %s", remoteAddr)
+		s.handleStream(filteredConn)
+		return
+	}
+
+	// Mux mode: smux session with multiple streams
 	session, err := mux.NewServerSession(filteredConn, &s.cfg.Mux, s.log)
 	if err != nil {
 		s.log.Error("Failed to create mux session from %s: %v", remoteAddr, err)
@@ -269,26 +277,12 @@ func (s *Server) handshake(conn net.Conn) error {
 func (s *Server) handleStream(stream io.ReadWriteCloser) {
 	defer stream.Close()
 
-	// Read the destination address from the stream header
-	destBuf := make([]byte, 2)
-	if _, err := io.ReadFull(stream, destBuf); err != nil {
-		s.log.Debug("Failed to read dest length: %v", err)
+	dest, err := tunnel.ReadDestHeader(stream)
+	if err != nil {
+		s.log.Debug("Failed to read dest header: %v", err)
 		return
 	}
 
-	destLen := int(destBuf[0])<<8 | int(destBuf[1])
-	if destLen > 512 {
-		s.log.Warn("Invalid destination length: %d", destLen)
-		return
-	}
-
-	destAddr := make([]byte, destLen)
-	if _, err := io.ReadFull(stream, destAddr); err != nil {
-		s.log.Debug("Failed to read dest addr: %v", err)
-		return
-	}
-
-	dest := string(destAddr)
 	s.log.Debug("Forwarding stream to %s", dest)
 
 	// Connect to destination
@@ -298,6 +292,7 @@ func (s *Server) handleStream(stream io.ReadWriteCloser) {
 		return
 	}
 	defer destConn.Close()
+	utils.OptimizeTCP(destConn, s.cfg.Performance)
 
 	// Relay data bidirectionally (with traffic accounting)
 	s.relayWithMetrics(stream, destConn)
@@ -359,7 +354,15 @@ func (s *Server) SetRateLimit(userID string, bytesPerSec int64) {
 
 // Stop gracefully shuts down the server
 func (s *Server) Stop() {
-	close(s.done)
+	select {
+	case <-s.done:
+		return
+	default:
+		close(s.done)
+	}
+	if s.listener != nil {
+		s.listener.Close()
+	}
 	s.transport.Close()
 
 	// Stop health service

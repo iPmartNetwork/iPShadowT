@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/version-v2.2.1-blue?style=flat-square" alt="Version"/></a>
+  <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/version-v2.2.2-blue?style=flat-square" alt="Version"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"/></a>
   <a href="https://github.com/iPmartNetwork/iPShadowT/releases"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform"/></a>

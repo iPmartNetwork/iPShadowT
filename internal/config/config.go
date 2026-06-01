@@ -19,9 +19,17 @@ type Config struct {
 	RemoteAddr string `toml:"remote_addr"` // Client: server address
 
 	// Security
-	Password string `toml:"password"` // Pre-shared key for encryption
-	TLSCert  string `toml:"tls_cert"` // Path to TLS certificate
-	TLSKey   string `toml:"tls_key"`  // Path to TLS private key
+	Password              string `toml:"password"` // Pre-shared key for encryption
+	TLSCert               string `toml:"tls_cert"` // Path to TLS certificate
+	TLSKey                string `toml:"tls_key"`  // Path to TLS private key
+	TLSCA                 string `toml:"tls_ca"`   // Path to CA bundle for TLS verify
+	TLSInsecureSkipVerify bool   `toml:"tls_insecure_skip_verify"`
+
+	// Logging
+	LogFormat string `toml:"log_format"` // "text" or "json"
+
+	// Metrics
+	Metrics MetricsConfig `toml:"metrics"`
 
 	// Multiplexing
 	Mux MuxConfig `toml:"mux"`
@@ -153,6 +161,12 @@ type HealthConfig struct {
 	Listen  string `toml:"listen"` // e.g. "127.0.0.1:9090"
 }
 
+// MetricsConfig configures Prometheus metrics export
+type MetricsConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Listen  string `toml:"listen"` // e.g. "127.0.0.1:9091"
+}
+
 // CDNModeConfig configures CDN routing
 type CDNModeConfig struct {
 	Enabled   bool   `toml:"enabled"`
@@ -252,6 +266,17 @@ func applyDefaults(cfg *Config) {
 		cfg.AntiDPI.PaddingSize = "16-256"
 	}
 
+	if cfg.LogFormat == "" {
+		cfg.LogFormat = "text"
+	}
+
+	if cfg.Metrics.Listen == "" {
+		cfg.Metrics.Listen = "127.0.0.1:9091"
+	}
+	if cfg.Mode == "server" && !cfg.Metrics.Enabled {
+		cfg.Metrics.Enabled = true
+	}
+
 	applyBufferProfile(cfg)
 	applyUploadDefaults(cfg)
 }
@@ -294,13 +319,11 @@ func applyUploadDefaults(cfg *Config) {
 	if cfg.Performance.BufferProfile == "low_cpu" {
 		return
 	}
-	if cfg.Performance.BufferProfile == "low_cpu" {
-		return
-	}
 	const (
-		tcpBuf   = 16777216 // 16MB SO_SNDBUF / SO_RCVBUF
-		muxRecv  = 16777216
+		tcpBuf    = 16777216 // 16MB SO_SNDBUF / SO_RCVBUF
+		muxRecv   = 16777216
 		muxStream = 8388608
+		maxFrame  = 65535
 	)
 
 	if cfg.Performance.SendBuffer == 0 {
@@ -315,10 +338,18 @@ func applyUploadDefaults(cfg *Config) {
 	if cfg.Mux.StreamBuffer <= 2097152 {
 		cfg.Mux.StreamBuffer = muxStream
 	}
+	if cfg.Mux.FrameSize <= 32768 {
+		cfg.Mux.FrameSize = maxFrame
+	}
 
-	// Client → foreign server: outbound upload benefits from TCP_NODELAY
-	if cfg.Mode == "client" && cfg.Performance.BufferProfile != "low_cpu" {
+	// Client: direct mode (mux off) gives each flow its own TCP pipe — best for upload
+	if cfg.Mode == "client" {
+		cfg.Mux.Enabled = false
 		cfg.Performance.Nodelay = true
+	}
+	// Server: match direct clients when using upload_boost
+	if cfg.Mode == "server" && cfg.Performance.BufferProfile == "upload_boost" {
+		cfg.Mux.Enabled = false
 	}
 }
 
@@ -347,6 +378,49 @@ func validate(cfg *Config) error {
 	}
 	if !validTransports[cfg.Transport] {
 		return fmt.Errorf("invalid transport: %q", cfg.Transport)
+	}
+
+	if cfg.LogFormat != "text" && cfg.LogFormat != "json" {
+		return fmt.Errorf("invalid log_format: %q (use text or json)", cfg.LogFormat)
+	}
+
+	for i, fwd := range cfg.Forwards {
+		if fwd.Listen == "" {
+			return fmt.Errorf("forwards[%d]: listen is required", i)
+		}
+		if fwd.Type == "tcp" && fwd.Remote == "" {
+			return fmt.Errorf("forwards[%d]: remote is required for tcp forward", i)
+		}
+		switch fwd.Type {
+		case "tcp", "udp", "socks5", "http", "wireguard", "wg", "":
+		default:
+			return fmt.Errorf("forwards[%d]: unsupported type %q", i, fwd.Type)
+		}
+	}
+
+	if cfg.Transport == "reality" {
+		if cfg.Mode == "server" {
+			if cfg.Reality.PrivateKey == "" {
+				return fmt.Errorf("reality: private_key is required on server")
+			}
+			if cfg.Reality.Dest == "" {
+				return fmt.Errorf("reality: dest fallback is required on server")
+			}
+		}
+		if cfg.Mode == "client" {
+			if cfg.Reality.PublicKey == "" {
+				return fmt.Errorf("reality: public_key is required on client")
+			}
+			if cfg.Reality.ShortID == "" {
+				return fmt.Errorf("reality: short_id is required on client")
+			}
+		}
+	}
+
+	if cfg.TLSCert != "" || cfg.TLSKey != "" {
+		if cfg.TLSCert == "" || cfg.TLSKey == "" {
+			return fmt.Errorf("both tls_cert and tls_key are required when using TLS")
+		}
 	}
 
 	return nil

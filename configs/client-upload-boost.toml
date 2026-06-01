@@ -22,9 +22,10 @@ transport = "tcpmux"                    # tcpmux = fastest, least overhead
 remote_addr = "your-server.com:443"
 password = "your-password"
 
-# ── Multiplexing (aggressive) ──
+# ── Multiplexing (direct mode = best upload) ──
 [mux]
-concurrency = 8                         # More sessions = more parallel upload
+enabled = false
+concurrency = 8
 frame_size = 32768                      # 64KB frames (less overhead per byte)
 recv_buffer = 16777216                  # 16MB receive buffer
 stream_buffer = 8388608                 # 8MB stream buffer

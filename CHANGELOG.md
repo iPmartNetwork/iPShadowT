@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.2] - 2026-06-01
+
+### Fixed
+
+#### Protocol & upload path
+- **Direct mode alignment** — server supports `mux.enabled = false` (one TCP = one flow), matching client direct pool
+- **REALITY protocol** — auth token in ClientHello, TLS record wrapping, uTLS 1.8 compatibility
+- **Graceful shutdown** — SIGTERM/SIGINT now calls `Stop()` on client/server
+- **obfuscatedConn** — closes underlying TCP connection
+
+#### Performance
+- **Relay buffers** — `sync.Pool` for 256KB copy buffers (less GC under load)
+- **Quality-aware mux** — `GetStream` uses quality scores + round-robin tie-break
+- **Heartbeat** — quality/heartbeat modules only start when `heartbeat.enabled = true`
+- **TLS verify** — optional `tls_ca` / `tls_insecure_skip_verify` in config
+
+### Added
+
+- **CLI** — `-validate` and `-doctor` flags for config checks
+- **Multi-path** — `[[paths]]` wired into client dial (failover across paths)
+- **UDP forward** — `type = "udp"` enabled in forwarder
+- **Metrics** — configurable `[metrics] listen` (default `127.0.0.1:9091`)
+- **JSON logging** — `log_format = "json"` in config
+- **E2E tests** — real byte relay through tunnel (direct mode)
+- **Config validation** — forwards, REALITY keys, TLS paths
+
+### Changed
+
+- Server `upload_boost` default uses direct mux mode (matches client)
+- Install script: `frame_size = 65535`, server configs without client-only `[pool]`
+
+---
+
 ## [2.2.1] - 2026-06-01
 
 ### Fixed

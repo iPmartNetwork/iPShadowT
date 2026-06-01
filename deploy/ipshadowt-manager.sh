@@ -7,7 +7,7 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ─── Constants ────────────────────────────────────
-VERSION="2.2.1"
+VERSION="2.2.2"
 GITHUB_REPO="iPmartNetwork/iPShadowT"
 BINARY_NAME="ipshadowt"
 INSTALL_DIR="/usr/local/bin"
@@ -515,7 +515,7 @@ sni_spoof_method = \"${sni_method}\""
     msg_ask "Choice [2]: "; read -r perf_choice
     local perf_profile="upload_boost"
     local perf_concurrency=8
-    local perf_frame=32768
+    local perf_frame=65535
     local anti_fragment="false"
     local anti_padding="false"
     local anti_traffic_shape="false"
@@ -554,8 +554,12 @@ password = "${password}"
 ${tls_section}
 
 [mux]
+enabled = false
 concurrency = ${perf_concurrency}
 frame_size = ${perf_frame}
+
+[pool]
+size = 16
 
 [heartbeat]
 enabled = true
@@ -717,8 +721,9 @@ password = "${password}"
 ${tls_section}
 
 [mux]
+enabled = false
 concurrency = 8
-frame_size = 32768
+frame_size = 65535
 
 [heartbeat]
 enabled = true
@@ -787,7 +792,11 @@ export_config() {
         echo "password = \"${password}\""
         echo ""
         echo "[mux]"
+        echo "enabled = false"
         echo "concurrency = 8"
+        echo ""
+        echo "[pool]"
+        echo "size = 16"
         echo ""
         echo "[performance]"
         echo "nodelay = true"
@@ -1432,8 +1441,12 @@ password = "${pass}"
 ${tls_section}
 
 [mux]
+enabled = false
 concurrency = 8
-frame_size = 32768
+frame_size = 65535
+
+[pool]
+size = 16
 
 [heartbeat]
 enabled = true
@@ -1557,8 +1570,9 @@ password = "${pass}"
 ${tls_section}
 
 [mux]
+enabled = false
 concurrency = 8
-frame_size = 32768
+frame_size = 65535
 
 [heartbeat]
 enabled = true

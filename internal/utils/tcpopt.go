@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/iPmart/iPShadowT/internal/config"
@@ -11,6 +12,13 @@ import (
 
 // RelayBufferSize is the copy buffer used for tunnel data relay (upload + download).
 const RelayBufferSize = 256 * 1024
+
+var relayBufPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, RelayBufferSize)
+		return &b
+	},
+}
 
 // TCPConnFrom unwraps TLS and other wrappers to reach the underlying *net.TCPConn.
 func TCPConnFrom(conn net.Conn) *net.TCPConn {
@@ -56,8 +64,9 @@ func OptimizeTCP(conn net.Conn, perf config.PerformanceConfig) {
 
 // CopyRelay copies data with a large buffer for better upload throughput.
 func CopyRelay(dst io.Writer, src io.Reader) (int64, error) {
-	buf := make([]byte, RelayBufferSize)
-	return io.CopyBuffer(dst, src, buf)
+	bp := relayBufPool.Get().(*[]byte)
+	defer relayBufPool.Put(bp)
+	return io.CopyBuffer(dst, src, *bp)
 }
 
 // OptimizedListener wraps a net.Listener and applies TCP tuning to accepted connections.

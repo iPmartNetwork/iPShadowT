@@ -45,10 +45,7 @@ func (t *TCPMux) Dial() (net.Conn, error) {
 	var err error
 
 	if t.cfg.TLSCert != "" || t.cfg.TLSKey != "" {
-		// TLS connection
-		tlsConfig := &tls.Config{
-			InsecureSkipVerify: true, // TODO: proper cert validation
-		}
+		tlsConfig := buildTLSClientConfig(t.cfg)
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 	} else {
 		// Plain TCP

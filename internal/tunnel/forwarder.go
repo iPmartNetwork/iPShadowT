@@ -55,6 +55,8 @@ func (f *Forwarder) Start() error {
 	switch f.cfg.Type {
 	case "tcp":
 		return f.startTCP()
+	case "udp":
+		return f.startUDP()
 	case "socks5":
 		return f.startSOCKS5()
 	case "http":
@@ -137,7 +139,7 @@ func (f *Forwarder) handleTCPConn(conn net.Conn) {
 
 	// Send destination address header
 	dest := f.cfg.Remote
-	if err := writeDestHeader(stream, dest); err != nil {
+	if err := WriteDestHeader(stream, dest); err != nil {
 		f.log.Error("[%s] Failed to write dest header: %v", f.cfg.Name, err)
 		return
 	}
@@ -211,7 +213,7 @@ func (f *Forwarder) handleSOCKS5(conn net.Conn) {
 	defer stream.Close()
 
 	// Send destination to server
-	if err := writeDestHeader(stream, dest); err != nil {
+	if err := WriteDestHeader(stream, dest); err != nil {
 		f.log.Error("[%s] Failed to write dest: %v", f.cfg.Name, err)
 		conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		return
@@ -296,23 +298,40 @@ func (f *Forwarder) startHTTPProxy() error {
 	return f.startSOCKS5()
 }
 
-// writeDestHeader writes the destination address header to a stream
-func writeDestHeader(w io.Writer, dest string) error {
-	destBytes := []byte(dest)
-	header := make([]byte, 2+len(destBytes))
-	header[0] = byte(len(destBytes) >> 8)
-	header[1] = byte(len(destBytes))
-	copy(header[2:], destBytes)
+// startUDP starts a UDP forwarder over the tunnel
+func (f *Forwarder) startUDP() error {
+	udpFwd := NewUDPForwarder(f.cfg.Listen, f.cfg.Remote, f.pool, f.log)
+	if f.DirectDial != nil {
+		// UDP over direct mode not yet optimized — use mux stream per packet batch
+		f.log.Warn("[%s] UDP direct mode uses on-demand dials", f.cfg.Name)
+	}
+	return udpFwd.Start()
+}
 
-	_, err := w.Write(header)
-	return err
+// writeDestHeader is deprecated — use WriteDestHeader.
+func writeDestHeader(w io.Writer, dest string) error {
+	return WriteDestHeader(w, dest)
 }
 
 // Stop gracefully stops the forwarder
 func (f *Forwarder) Stop() {
-	close(f.done)
+	select {
+	case <-f.done:
+		return
+	default:
+		close(f.done)
+	}
 	if f.listener != nil {
 		f.listener.Close()
 	}
-	f.wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		f.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		f.log.Warn("[%s] forwarder stop timed out", f.cfg.Name)
+	}
 }

@@ -3,8 +3,6 @@ package antidpi
 import (
 	"crypto/ecdh"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -15,29 +13,15 @@ import (
 	"github.com/iPmart/iPShadowT/internal/logger"
 )
 
-// REALITY implements the REALITY protocol for anti-DPI
-// Key concept: The server steals the TLS certificate of a real website (dest)
-// and presents it to probes. Only clients with the correct auth can activate the tunnel.
-//
-// How it works:
-// 1. Client connects with uTLS (mimics browser fingerprint)
-// 2. Client sends a special marker in the ClientHello (hidden in session ID or key share)
-// 3. Server verifies the marker using shared key
-// 4. If valid → tunnel mode
-// 5. If invalid → proxy to real website (probe resistance)
-
 // RealityConfig holds REALITY protocol configuration
 type RealityConfig struct {
-	// Server settings
-	Dest       string // Fallback destination (e.g., "www.google.com:443")
-	ServerName string // SNI to present (e.g., "www.google.com")
-	PrivateKey string // X25519 private key (hex)
-	ShortIDs   []string // Allowed short IDs
-
-	// Client settings
-	PublicKey   string // Server's X25519 public key (hex)
-	ShortID    string // Client's short ID
-	Fingerprint string // uTLS fingerprint to use
+	Dest        string
+	ServerName  string
+	PrivateKey  string
+	ShortIDs    []string
+	PublicKey   string
+	ShortID     string
+	Fingerprint string
 }
 
 // RealityServer handles REALITY protocol on the server side
@@ -45,12 +29,11 @@ type RealityServer struct {
 	config     RealityConfig
 	privateKey *ecdh.PrivateKey
 	log        *logger.Logger
-	fallback   net.Conn // connection to real website for fallback
+	replay     *ReplayProtection
 }
 
 // NewRealityServer creates a new REALITY server
 func NewRealityServer(cfg RealityConfig, log *logger.Logger) (*RealityServer, error) {
-	// Parse private key
 	keyBytes, err := hex.DecodeString(cfg.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid private key: %w", err)
@@ -65,105 +48,104 @@ func NewRealityServer(cfg RealityConfig, log *logger.Logger) (*RealityServer, er
 		config:     cfg,
 		privateKey: privateKey,
 		log:        log,
+		replay:     NewReplayProtection(2 * time.Minute),
 	}, nil
 }
 
-// HandleConnection processes an incoming connection with REALITY protocol
-// Returns the authenticated connection if valid, or handles fallback
+func (rs *RealityServer) debug(format string, args ...interface{}) {
+	if rs.log != nil {
+		rs.log.Debug(format, args...)
+	}
+}
+
+// HandleConnection processes an incoming connection with REALITY protocol.
 func (rs *RealityServer) HandleConnection(conn net.Conn) (net.Conn, bool, error) {
-	// Read the TLS ClientHello
-	clientHello, rawData, err := rs.peekClientHello(conn)
+	rawData, err := rs.readClientHelloRecord(conn)
 	if err != nil {
-		rs.log.Debug("REALITY: Failed to read ClientHello: %v", err)
+		rs.debug("REALITY: Failed to read ClientHello: %v", err)
 		rs.proxyToFallback(conn, rawData)
 		return nil, false, nil
 	}
 
-	// Verify the authentication marker in the ClientHello
-	if !rs.verifyClient(clientHello) {
-		rs.log.Debug("REALITY: Client verification failed, proxying to fallback")
+	if !rs.verifyClientHello(rawData) {
+		rs.debug("REALITY: Client verification failed, proxying to fallback")
 		rs.proxyToFallback(conn, rawData)
 		return nil, false, nil
 	}
 
-	rs.log.Debug("REALITY: Client authenticated successfully")
+	if _, err := conn.Write([]byte(RealityAuthOK)); err != nil {
+		conn.Close()
+		return nil, false, fmt.Errorf("failed to send REALITY auth ack: %w", err)
+	}
 
-	// Client is authenticated - return the connection for tunnel use
-	// The connection now needs to complete a modified TLS handshake
+	rs.debug("REALITY: Client authenticated successfully")
 	return conn, true, nil
 }
 
-// peekClientHello reads and parses the TLS ClientHello without consuming it
-func (rs *RealityServer) peekClientHello(conn net.Conn) (*tls.ClientHelloInfo, []byte, error) {
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+func (rs *RealityServer) readClientHelloRecord(conn net.Conn) ([]byte, error) {
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	defer conn.SetReadDeadline(time.Time{})
 
-	// Read TLS record header (5 bytes)
 	header := make([]byte, 5)
 	if _, err := io.ReadFull(conn, header); err != nil {
-		return nil, header, err
+		return header, err
 	}
-
-	// Verify it's a TLS Handshake record
 	if header[0] != 0x16 {
-		return nil, header, fmt.Errorf("not a TLS handshake: type=%d", header[0])
+		return header, fmt.Errorf("not a TLS handshake: type=%d", header[0])
 	}
 
-	// Read the record length
 	recordLen := int(header[3])<<8 | int(header[4])
-	if recordLen > 16384 {
-		return nil, header, fmt.Errorf("record too large: %d", recordLen)
+	if recordLen <= 0 || recordLen > 16384 {
+		return header, fmt.Errorf("invalid record length: %d", recordLen)
 	}
 
-	// Read the full record
 	record := make([]byte, recordLen)
 	if _, err := io.ReadFull(conn, record); err != nil {
-		return nil, append(header, record...), err
+		return append(header, record...), err
 	}
 
-	rawData := append(header, record...)
+	return append(header, record...), nil
+}
 
-	// Parse ClientHello (basic parsing)
-	// Full record: header[0]=HandshakeType, [1:4]=length, [4:6]=version, [6:38]=random, ...
-	if len(record) < 38 {
-		return nil, rawData, fmt.Errorf("record too short for ClientHello")
+func (rs *RealityServer) verifyClientHello(rawData []byte) bool {
+	sessionID, ephPub, err := parseClientHelloAuth(rawData)
+	if err != nil {
+		rs.debug("REALITY: parse ClientHello: %v", err)
+		return false
 	}
 
-	// We don't need full parsing - just extract what we need for verification
-	// The auth marker is typically in the session ID or a specific extension
-	return nil, rawData, nil
+	if len(sessionID) != AuthTokenSize {
+		return false
+	}
+	if !rs.replay.Check(sessionID) {
+		rs.debug("REALITY: replay detected")
+		return false
+	}
+
+	ok, _ := VerifyAuthToken(sessionID, ephPub, rs.privateKey, rs.config.ShortIDs, 120)
+	return ok
 }
 
-// verifyClient checks if the ClientHello contains valid authentication
-func (rs *RealityServer) verifyClient(hello *tls.ClientHelloInfo) bool {
-	// In a full implementation, this would:
-	// 1. Extract the session ID from ClientHello
-	// 2. Derive the expected auth using ECDH (client's ephemeral key + server's private key)
-	// 3. Compare with constant-time comparison
-	// For now, we use a simplified version
-	return false
-}
-
-// proxyToFallback proxies the connection to the real website
 func (rs *RealityServer) proxyToFallback(conn net.Conn, initialData []byte) {
 	defer conn.Close()
 
-	// Connect to the real website
+	if rs.config.Dest == "" {
+		return
+	}
+
 	fallbackConn, err := net.DialTimeout("tcp", rs.config.Dest, 5*time.Second)
 	if err != nil {
-		rs.log.Debug("REALITY: Fallback connection failed: %v", err)
+		rs.debug("REALITY: Fallback connection failed: %v", err)
 		return
 	}
 	defer fallbackConn.Close()
 
-	// Send the initial data we already read
 	if len(initialData) > 0 {
 		if _, err := fallbackConn.Write(initialData); err != nil {
 			return
 		}
 	}
 
-	// Relay bidirectionally
 	done := make(chan struct{}, 2)
 	go func() {
 		io.Copy(fallbackConn, conn)
@@ -186,7 +168,6 @@ type RealityClient struct {
 
 // NewRealityClient creates a new REALITY client
 func NewRealityClient(cfg RealityConfig, log *logger.Logger) (*RealityClient, error) {
-	// Parse server's public key
 	keyBytes, err := hex.DecodeString(cfg.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid public key: %w", err)
@@ -197,7 +178,6 @@ func NewRealityClient(cfg RealityConfig, log *logger.Logger) (*RealityClient, er
 		return nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
 
-	// Create uTLS dialer
 	utlsDialer := NewUTLSDialer(cfg.Fingerprint, cfg.ServerName, log)
 
 	return &RealityClient{
@@ -210,64 +190,111 @@ func NewRealityClient(cfg RealityConfig, log *logger.Logger) (*RealityClient, er
 
 // Connect establishes a REALITY connection to the server
 func (rc *RealityClient) Connect(conn net.Conn) (net.Conn, error) {
-	// Generate ephemeral X25519 key pair
-	ephemeralKey, err := ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate ephemeral key: %w", err)
+	if err := rc.sendAuthenticatedClientHello(conn); err != nil {
+		return nil, err
 	}
 
-	// Compute shared secret
-	sharedSecret, err := ephemeralKey.ECDH(rc.publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("ECDH failed: %w", err)
+	resp := make([]byte, len(RealityAuthOK))
+	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return nil, fmt.Errorf("REALITY auth response failed: %w", err)
+	}
+	conn.SetReadDeadline(time.Time{})
+
+	if string(resp) != RealityAuthOK {
+		return nil, fmt.Errorf("REALITY authentication rejected by server")
 	}
 
-	// Derive auth token from shared secret
-	authToken := deriveAuthToken(sharedSecret, rc.config.ShortID)
+	rc.debug("REALITY: Connected (SNI: %s, fingerprint: %s)", rc.config.ServerName, rc.config.Fingerprint)
+	return conn, nil
+}
 
-	// Connect with uTLS, embedding the auth token
-	// The auth token is placed in the session ID field of ClientHello
+func (rc *RealityClient) debug(format string, args ...interface{}) {
+	if rc.log != nil {
+		rc.log.Debug(format, args...)
+	}
+}
+
+func (rc *RealityClient) sendAuthenticatedClientHello(conn net.Conn) error {
+	token, ephemeralKey, err := BuildAuthToken(rc.publicKey, rc.config.ShortID, 120)
+	if err != nil {
+		return fmt.Errorf("build auth token: %w", err)
+	}
+
+	spec, err := utls.UTLSIdToSpec(rc.utls.getClientHelloID())
+	if err != nil {
+		return err
+	}
+	injectRealityKeyShare(&spec, ephemeralKey.PublicKey().Bytes())
+
 	tlsConfig := &utls.Config{
-		ServerName:         rc.config.ServerName,
-		InsecureSkipVerify: true,
+		ServerName:             rc.config.ServerName,
+		InsecureSkipVerify:     true,
 		SessionTicketsDisabled: true,
 	}
 
-	fingerprint := rc.utls.getClientHelloID()
-	utlsConn := utls.UClient(conn, tlsConfig, fingerprint)
-
-	// Modify the ClientHello to include our auth marker
-	if err := utlsConn.ApplyPreset(getPresetWithAuth(fingerprint, authToken)); err != nil {
-		// Fallback: just do normal handshake
-		rc.log.Debug("REALITY: Could not apply preset, using standard handshake")
+	uconn := utls.UClient(conn, tlsConfig, utls.HelloCustom)
+	if err := uconn.ApplyPreset(&spec); err != nil {
+		return fmt.Errorf("apply ClientHello preset: %w", err)
+	}
+	if err := uconn.BuildHandshakeState(); err != nil {
+		return fmt.Errorf("build handshake state: %w", err)
 	}
 
-	if err := utlsConn.Handshake(); err != nil {
-		return nil, fmt.Errorf("REALITY handshake failed: %w", err)
+	sessionID := SerializeAuthToken(token)
+	uconn.HandshakeState.Hello.SessionId = sessionID
+	patchHelloX25519KeyShare(uconn.HandshakeState.Hello, ephemeralKey.PublicKey().Bytes())
+
+	if err := uconn.MarshalClientHello(); err != nil {
+		return fmt.Errorf("marshal ClientHello: %w", err)
 	}
 
-	rc.log.Debug("REALITY: Connected (SNI: %s, fingerprint: %s)", rc.config.ServerName, rc.config.Fingerprint)
-	return utlsConn, nil
-}
+	raw := uconn.HandshakeState.Hello.Raw
+	if len(raw) == 0 {
+		return fmt.Errorf("empty ClientHello")
+	}
+	record := wrapTLSHandshakeRecord(raw)
 
-// deriveAuthToken derives an authentication token from shared secret and short ID
-func deriveAuthToken(sharedSecret []byte, shortID string) []byte {
-	h := sha256.New()
-	h.Write(sharedSecret)
-	h.Write([]byte("iPShadowT-REALITY-AUTH"))
-	h.Write([]byte(shortID))
-	return h.Sum(nil)[:16] // 16 bytes auth token
-}
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	defer conn.SetWriteDeadline(time.Time{})
 
-// getPresetWithAuth creates a uTLS preset that includes the auth token
-func getPresetWithAuth(helloID utls.ClientHelloID, authToken []byte) *utls.ClientHelloSpec {
-	// This is a simplified version
-	// In production, the auth token would be embedded in:
-	// - Session ID (32 bytes available)
-	// - Key Share extension (ephemeral public key)
-	// - Padding extension
-	_ = authToken
+	if _, err := conn.Write(record); err != nil {
+		return fmt.Errorf("write ClientHello: %w", err)
+	}
 	return nil
+}
+
+func wrapTLSHandshakeRecord(handshake []byte) []byte {
+	record := make([]byte, 5+len(handshake))
+	record[0] = 0x16 // handshake
+	record[1] = 0x03
+	record[2] = 0x01
+	record[3] = byte(len(handshake) >> 8)
+	record[4] = byte(len(handshake))
+	copy(record[5:], handshake)
+	return record
+}
+
+func injectRealityKeyShare(spec *utls.ClientHelloSpec, ephPub []byte) {
+	for _, ext := range spec.Extensions {
+		ksExt, ok := ext.(*utls.KeyShareExtension)
+		if !ok {
+			continue
+		}
+		for i := range ksExt.KeyShares {
+			if ksExt.KeyShares[i].Group == utls.X25519 {
+				ksExt.KeyShares[i].Data = append([]byte(nil), ephPub...)
+			}
+		}
+	}
+}
+
+func patchHelloX25519KeyShare(hello *utls.PubClientHelloMsg, ephPub []byte) {
+	for i := range hello.KeyShares {
+		if hello.KeyShares[i].Group == utls.X25519 {
+			hello.KeyShares[i].Data = append([]byte(nil), ephPub...)
+		}
+	}
 }
 
 // GenerateRealityKeyPair generates a new X25519 key pair for REALITY

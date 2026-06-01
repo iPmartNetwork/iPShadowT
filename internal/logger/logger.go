@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -19,12 +20,18 @@ const (
 
 // Logger provides structured logging
 type Logger struct {
-	level Level
+	level  Level
+	format string
 }
 
 // New creates a new logger with the specified level
 func New(level string) *Logger {
-	l := &Logger{}
+	return NewWithFormat(level, "text")
+}
+
+// NewWithFormat creates a logger with text or JSON output.
+func NewWithFormat(level, format string) *Logger {
+	l := &Logger{format: format}
 	switch level {
 	case "debug":
 		l.level = DEBUG
@@ -44,9 +51,36 @@ func (l *Logger) log(level Level, prefix, format string, args ...interface{}) {
 	if level < l.level {
 		return
 	}
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	msg := fmt.Sprintf(format, args...)
+	if l.format == "json" {
+		entry := map[string]string{
+			"time":    time.Now().UTC().Format(time.RFC3339),
+			"level":   levelName(level),
+			"message": msg,
+		}
+		b, _ := json.Marshal(entry)
+		fmt.Println(string(b))
+		return
+	}
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	fmt.Printf("%s %s %s\n", timestamp, prefix, msg)
+}
+
+func levelName(level Level) string {
+	switch level {
+	case DEBUG:
+		return "debug"
+	case INFO:
+		return "info"
+	case WARN:
+		return "warn"
+	case ERROR:
+		return "error"
+	case FATAL:
+		return "fatal"
+	default:
+		return "info"
+	}
 }
 
 // Debug logs a debug message

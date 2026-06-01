@@ -52,12 +52,13 @@ func BuildAuthToken(serverPublicKey *ecdh.PublicKey, shortID string, timeWindow 
 	// Current timestamp (truncated to 4 bytes)
 	now := uint32(time.Now().Unix())
 
-	// Build auth data: timestamp + short_id
+	// Build auth data: timestamp + short_id bytes (must match verify path)
+	shortIDBytes := normalizeShortIDBytes(shortID)
 	authData := make([]byte, 0, 12)
 	tsBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(tsBuf, now)
 	authData = append(authData, tsBuf...)
-	authData = append(authData, []byte(shortID)...)
+	authData = append(authData, trimNull(shortIDBytes)...)
 
 	// Compute HMAC
 	mac := hmac.New(sha256.New, sharedSecret)
@@ -71,12 +72,8 @@ func BuildAuthToken(serverPublicKey *ecdh.PublicKey, shortID string, timeWindow 
 	}
 	copy(token.Token[:], fullMAC[:16])
 
-	// Copy short ID (pad or truncate to 8 bytes)
-	shortIDBytes := []byte(shortID)
-	if len(shortIDBytes) > 8 {
-		shortIDBytes = shortIDBytes[:8]
-	}
-	copy(token.ShortID[:], shortIDBytes)
+	// Copy short ID (hex-decoded or ASCII, padded to 8 bytes)
+	copy(token.ShortID[:], normalizeShortIDBytes(shortID))
 
 	// Random padding
 	rand.Read(token.Padding[:])
@@ -125,12 +122,17 @@ func VerifyAuthToken(tokenBytes []byte, ephemeralPublicKeyBytes []byte, serverPr
 		return false, "" // Token expired or from future
 	}
 
-	// Check short ID
+	// Check short ID against allowed list
 	shortID := string(trimNull(token.ShortID[:]))
 	found := false
 	for _, allowed := range allowedShortIDs {
-		if shortID == allowed {
+		if allowed == "" {
+			continue
+		}
+		want := normalizeShortIDBytes(allowed)
+		if bytesEqual(trimNull(token.ShortID[:]), trimNull(want)) {
 			found = true
+			shortID = allowed
 			break
 		}
 	}
@@ -138,12 +140,12 @@ func VerifyAuthToken(tokenBytes []byte, ephemeralPublicKeyBytes []byte, serverPr
 		return false, ""
 	}
 
-	// Verify HMAC
+	// Verify HMAC (use token short_id bytes, same as client build)
 	authData := make([]byte, 0, 12)
 	tsBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(tsBuf, token.Timestamp)
 	authData = append(authData, tsBuf...)
-	authData = append(authData, []byte(shortID)...)
+	authData = append(authData, trimNull(token.ShortID[:])...)
 
 	mac := hmac.New(sha256.New, sharedSecret)
 	mac.Write([]byte("iPShadowT-REALITY-v1"))

@@ -14,10 +14,10 @@ password = "your-secret-password-here"  # Must match server (CHANGE THIS!)
 # tls_cert = "/etc/ipshadowt/cert.pem"
 # tls_key = "/etc/ipshadowt/key.pem"
 
-# Multiplexing
+# Multiplexing — direct mode (enabled=false) recommended for upload speed
 [mux]
-enabled = true
-concurrency = 4             # Number of mux sessions to server
+enabled = false
+concurrency = 8
 frame_size = 32768          # Max frame size (32KB)
 recv_buffer = 4194304       # Receive buffer (4MB)
 stream_buffer = 2097152     # Stream buffer (2MB)

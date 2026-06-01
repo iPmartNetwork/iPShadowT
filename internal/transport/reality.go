@@ -8,6 +8,7 @@ import (
 	"github.com/iPmart/iPShadowT/internal/antidpi"
 	"github.com/iPmart/iPShadowT/internal/config"
 	"github.com/iPmart/iPShadowT/internal/logger"
+	"github.com/iPmart/iPShadowT/internal/utils"
 )
 
 // Reality implements Transport using the REALITY protocol
@@ -90,6 +91,7 @@ func (r *Reality) Dial() (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("TCP dial failed: %w", err)
 	}
+	utils.OptimizeTCP(tcpConn, r.cfg.Performance)
 
 	// Step 2: Apply TLS fragmentation if enabled
 	var conn net.Conn = tcpConn
@@ -128,6 +130,7 @@ func (r *Reality) Listen() (net.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen on %s failed: %w", addr, err)
 	}
+	listener = utils.NewOptimizedListener(listener, r.cfg.Performance)
 
 	// Wrap with REALITY listener
 	realityListener := &RealityListener{

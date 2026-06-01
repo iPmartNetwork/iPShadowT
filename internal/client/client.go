@@ -11,6 +11,7 @@ import (
 	"github.com/iPmart/iPShadowT/internal/crypto"
 	"github.com/iPmart/iPShadowT/internal/dns"
 	"github.com/iPmart/iPShadowT/internal/logger"
+	"github.com/iPmart/iPShadowT/internal/multipath"
 	"github.com/iPmart/iPShadowT/internal/mux"
 	"github.com/iPmart/iPShadowT/internal/stability"
 	"github.com/iPmart/iPShadowT/internal/transport"
@@ -23,6 +24,7 @@ type Client struct {
 	cfg         *config.Config
 	log         *logger.Logger
 	transport   transport.Transport
+	paths       *multipath.Manager
 	encryptor   *crypto.Encryptor
 	pool        *mux.SessionPool
 	forwards    []*tunnel.Forwarder
@@ -65,6 +67,16 @@ func New(cfg *config.Config, log *logger.Logger) (*Client, error) {
 		encryptor: enc,
 		pool:      mux.NewSessionPool(&cfg.Mux, log),
 		done:      make(chan struct{}),
+	}
+
+	if len(cfg.Paths) > 0 {
+		pm, err := multipath.NewManager(cfg.Paths, "priority", cfg, log)
+		if err != nil {
+			return nil, fmt.Errorf("multipath: %w", err)
+		}
+		c.paths = pm
+		pm.Start()
+		log.Info("Multi-path enabled: %d paths", len(cfg.Paths))
 	}
 
 	// Initialize DNS-over-HTTPS resolver to prevent DNS leaks
@@ -206,14 +218,13 @@ func (c *Client) Start() error {
 		c.wg.Add(1)
 		go c.maintainSessions()
 
-		// Connect quality monitor to session pool for smart load balancing
-		c.pool.SetQualityFunc(func(sessionID int) int {
-			return c.quality.GetScore(sessionID)
-		})
-
-		// Start stability modules
-		c.heartbeat.Start()
-		c.quality.Start()
+		if c.cfg.Heartbeat.Enabled {
+			c.pool.SetQualityFunc(func(sessionID int) int {
+				return c.quality.GetScore(sessionID)
+			})
+			c.heartbeat.Start()
+			c.quality.Start()
+		}
 		c.warmup.Start()
 	} else {
 		// Maintain direct pool
@@ -250,26 +261,26 @@ func (c *Client) connectSessions() error {
 
 		// Register session with heartbeat monitor
 		sessionID := connected
-		c.heartbeat.Register(sessionID, func() error {
-			if session.IsClosed() {
-				return fmt.Errorf("session closed")
-			}
-			// Use smux's built-in ping (open+close a stream as health check)
-			start := time.Now()
-			stream, err := session.OpenStream()
-			if err != nil {
+		if c.cfg.Heartbeat.Enabled {
+			c.heartbeat.Register(sessionID, func() error {
+				if session.IsClosed() {
+					return fmt.Errorf("session closed")
+				}
+				start := time.Now()
+				stream, err := session.OpenStream()
+				if err != nil {
+					c.quality.RecordPing(sessionID)
+					return err
+				}
+				stream.Close()
+				rtt := time.Since(start)
+				c.quality.RecordRTT(sessionID, rtt)
 				c.quality.RecordPing(sessionID)
-				return err
-			}
-			stream.Close()
-			rtt := time.Since(start)
-			// Feed RTT into quality monitor
-			c.quality.RecordRTT(sessionID, rtt)
-			c.quality.RecordPing(sessionID)
-			c.quality.RecordPong(sessionID)
-			return nil
-		})
-		c.quality.Register(sessionID)
+				c.quality.RecordPong(sessionID)
+				return nil
+			})
+			c.quality.Register(sessionID)
+		}
 	}
 
 	if connected == 0 {
@@ -280,10 +291,17 @@ func (c *Client) connectSessions() error {
 	return nil
 }
 
+// dialTransport opens a transport connection (multipath or primary).
+func (c *Client) dialTransport() (net.Conn, error) {
+	if c.paths != nil {
+		return c.paths.Dial()
+	}
+	return c.transport.Dial()
+}
+
 // createSession creates a single mux session
 func (c *Client) createSession() (*mux.Session, error) {
-	// Dial the server
-	conn, err := c.transport.Dial()
+	conn, err := c.dialTransport()
 	if err != nil {
 		return nil, fmt.Errorf("dial failed: %w", err)
 	}
@@ -505,7 +523,10 @@ func (c *Client) checkAndReconnect() {
 
 // initDirectPool pre-connects a pool of raw TCP connections (handshake done once)
 func (c *Client) initDirectPool() error {
-	c.poolSize = 8 // Pre-connect 8 connections
+	c.poolSize = c.cfg.Pool.Size
+	if c.poolSize <= 0 {
+		c.poolSize = 16
+	}
 	c.directPool = make(chan net.Conn, c.poolSize*2)
 
 	c.log.Info("Pre-connecting %d direct connections...", c.poolSize)
@@ -531,7 +552,7 @@ func (c *Client) initDirectPool() error {
 
 // dialAndHandshake creates a new connection with handshake completed
 func (c *Client) dialAndHandshake() (net.Conn, error) {
-	conn, err := c.transport.Dial()
+	conn, err := c.dialTransport()
 	if err != nil {
 		return nil, err
 	}
@@ -623,6 +644,9 @@ func (c *Client) Stop() {
 
 	// Close transport
 	c.transport.Close()
+	if c.paths != nil {
+		c.paths.Close()
+	}
 
 	c.wg.Wait()
 	c.log.Info("Client stopped")
@@ -644,5 +668,5 @@ func (c *obfuscatedConn) Read(p []byte) (int, error) {
 
 func (c *obfuscatedConn) Close() error {
 	c.obf.Close()
-	return nil
+	return c.Conn.Close()
 }

@@ -14,9 +14,9 @@ password = "your-secret-password-here"  # Pre-shared key (CHANGE THIS!)
 # tls_cert = "/etc/ipshadowt/cert.pem"
 # tls_key = "/etc/ipshadowt/key.pem"
 
-# Multiplexing
+# Multiplexing — direct mode matches client upload_boost path
 [mux]
-enabled = true
+enabled = false
 concurrency = 8             # Number of mux sessions to accept
 frame_size = 32768          # Max frame size (32KB)
 recv_buffer = 4194304       # Receive buffer (4MB)
