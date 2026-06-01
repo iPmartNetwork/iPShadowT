@@ -1,6 +1,6 @@
 #!/bin/bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  iPShadowT Manager v2.0.0
+#  iPShadowT Deployment Manager v2.2.3
 #  Anti-DPI Multi-Transport Tunnel Engine
 #  iPmart Network (Ali Hassanzadeh)
 #  https://github.com/iPmartNetwork/iPShadowT
@@ -12,6 +12,7 @@ GITHUB_REPO="iPmartNetwork/iPShadowT"
 BINARY_NAME="ipshadowt"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/ipshadowt"
+REALITY_META="${CONFIG_DIR}/.reality-client.env"
 BACKUP_DIR="/etc/ipshadowt/backups"
 SERVICE_NAME="ipshadowt"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -51,7 +52,7 @@ print_banner() {
     echo -e "${C}  |_|_|   |____/|_| |_|\\__,_|\\__,_|\\___/ \\_/\\_/  |_|  ${N}"
     echo ""
     echo -e "  ${BOLD}Anti-DPI Multi-Transport Tunnel Engine${N}"
-    echo -e "  ${D}iPmart Network • v${VERSION} • github.com/iPmartNetwork${N}"
+    echo -e "  ${D}iPmart Network • Manager v${VERSION} • Binary $(get_version)${N}"
     print_dline
     # Server info line
     local ip=$(curl -s4 --max-time 2 ifconfig.me 2>/dev/null || echo "N/A")
@@ -66,6 +67,151 @@ print_banner() {
 press_enter() {
     echo ""
     msg_ask "Press Enter to continue..."; read -r
+}
+
+# Parse --gen-reality-keys output (avoid matching "private_key =" template lines)
+parse_reality_keys() {
+    local keys="$1"
+    priv_key=$(echo "$keys" | grep "Private Key:" | head -1 | sed 's/.*Private Key:[[:space:]]*//')
+    pub_key=$(echo "$keys" | grep "Public Key:" | head -1 | sed 's/.*Public Key:[[:space:]]*//')
+    short_id=$(echo "$keys" | grep "Short ID:" | head -1 | sed 's/.*Short ID:[[:space:]]*//')
+    priv_key=$(echo "$priv_key" | tr -d '\r\n" ')
+    pub_key=$(echo "$pub_key" | tr -d '\r\n" ')
+    short_id=$(echo "$short_id" | tr -d '\r\n" ')
+}
+
+normalize_reality_dest() {
+    local d="$1"
+    if [[ "$d" != *:* ]]; then
+        echo "${d}:443"
+    else
+        echo "$d"
+    fi
+}
+
+# Save REALITY public credentials for client export (never stores private_key)
+save_reality_client_meta() {
+    local meta_file="${1:-${REALITY_META}}"
+    mkdir -p "${CONFIG_DIR}"
+    cat > "$meta_file" << METAEOF
+# REALITY client credentials — share PUBLIC_KEY + SHORT_ID only
+# Generated: $(date -Iseconds 2>/dev/null || date)
+SNI="${sni}"
+PUBLIC_KEY="${pub_key}"
+SHORT_ID="${short_id}"
+DEST="${dest}"
+METAEOF
+    chmod 600 "$meta_file"
+}
+
+load_reality_client_meta() {
+    local meta_file="${1:-${REALITY_META}}"
+    SNI=""; PUBLIC_KEY=""; SHORT_ID=""; DEST=""
+    [ -f "$meta_file" ] && . "$meta_file"
+}
+
+print_reality_share_box() {
+    echo ""
+    echo -e "  ${W}REALITY — share with client:${N}"
+    echo -e "    Public Key: ${G}${pub_key}${N}"
+    echo -e "    Short ID:   ${G}${short_id}${N}"
+    echo -e "    SNI:        ${G}${sni}${N}"
+}
+
+# Prompt, generate, and validate REALITY server keys (sets sni, dest, priv_key, pub_key, short_id)
+prepare_reality_server() {
+    echo ""
+    echo -e "  ${W}REALITY Settings:${N}"
+    msg_ask "SNI to mimic [www.google.com]: "; read -r sni
+    sni=${sni:-www.google.com}
+    msg_ask "Fallback dest [www.google.com:443]: "; read -r dest
+    dest=${dest:-www.google.com:443}
+    dest=$(normalize_reality_dest "$dest")
+
+    priv_key=""
+    pub_key=""
+    short_id=""
+
+    if is_installed; then
+        msg_info "Generating REALITY keys..."
+        local keys
+        keys=$(${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys 2>/dev/null) || true
+        [ -n "$keys" ] && parse_reality_keys "$keys"
+    fi
+
+    [ -z "$short_id" ] && short_id=$(openssl rand -hex 4 2>/dev/null)
+    [ -z "$priv_key" ] && { msg_ask "Private key (64 hex): "; read -r priv_key; }
+    [ -z "$pub_key" ]  && { msg_ask "Public key (64 hex): "; read -r pub_key; }
+
+    priv_key=$(echo "$priv_key" | tr -d '\r\n" ')
+    pub_key=$(echo "$pub_key" | tr -d '\r\n" ')
+    short_id=$(echo "$short_id" | tr -d '\r\n" ')
+
+    if ! [[ "$priv_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        msg_err "Invalid private key (need 64 hex characters)"
+        return 1
+    fi
+    if ! [[ "$pub_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        msg_err "Invalid public key (need 64 hex characters)"
+        return 1
+    fi
+    if ! [[ "$short_id" =~ ^[0-9a-fA-F]{2,16}$ ]]; then
+        msg_err "Invalid short ID (need 2–16 hex characters)"
+        return 1
+    fi
+    return 0
+}
+
+backup_config() {
+    local src="$1"
+    [ ! -f "$src" ] && return 0
+    mkdir -p "${BACKUP_DIR}"
+    local dst="${BACKUP_DIR}/$(basename "$src").$(date +%Y%m%d-%H%M%S).bak"
+    cp "$src" "$dst"
+    msg_info "Backup saved: ${dst}"
+}
+
+restart_service_safe() {
+    local svc="${1:-${SERVICE_NAME}}"
+    local cfg="${2:-${CONFIG_DIR}/config.toml}"
+    if is_installed && [ -f "$cfg" ]; then
+        msg_step "Validating config..."
+        if ! ${INSTALL_DIR}/${BINARY_NAME} -validate -c "$cfg"; then
+            msg_err "Config validation failed: ${cfg}"
+            msg_info "Run: ${BINARY_NAME} -doctor -c ${cfg}"
+            return 1
+        fi
+        msg_ok "Config valid"
+    fi
+    systemctl restart "$svc" 2>/dev/null || systemctl start "$svc" 2>/dev/null || true
+    sleep 2
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        msg_ok "Service running!"
+        return 0
+    fi
+    msg_err "Service failed to start"
+    msg_info "Logs: journalctl -u ${svc} -n 20 --no-pager"
+    return 1
+}
+
+run_validate() {
+    local cf="${CONFIG_DIR}/config.toml"
+    if [ ! -f "$cf" ]; then
+        msg_err "No config at ${cf}"
+        return 1
+    fi
+    is_installed || { msg_err "Binary not installed"; return 1; }
+    ${INSTALL_DIR}/${BINARY_NAME} -validate -c "$cf"
+}
+
+run_doctor() {
+    local cf="${CONFIG_DIR}/config.toml"
+    if [ ! -f "$cf" ]; then
+        msg_err "No config at ${cf}"
+        return 1
+    fi
+    is_installed || { msg_err "Binary not installed"; return 1; }
+    ${INSTALL_DIR}/${BINARY_NAME} -doctor -c "$cf"
 }
 
 # ─── System Checks ────────────────────────────────
@@ -349,6 +495,8 @@ do_configure() {
     echo -e "  ${C} 8)${N} Generate REALITY keys"
     echo -e "  ${C} 9)${N} Generate random password"
     echo -e "  ${C}10)${N} Export client config"
+    echo -e "  ${C}11)${N} Validate config  ${D}(-validate)${N}"
+    echo -e "  ${C}12)${N} Run doctor       ${D}(-doctor)${N}"
     echo ""
     echo -e "  ${C} 0)${N} Back"
     echo ""
@@ -365,6 +513,8 @@ do_configure() {
         8) is_installed && ${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys || msg_err "Not installed" ;;
         9) echo ""; msg_ok "Password: $(gen_pass)" ;;
         10) export_config ;;
+        11) run_validate ;;
+        12) run_doctor ;;
         0) return ;;
         *) msg_err "Invalid option" ;;
     esac
@@ -464,6 +614,16 @@ tls_key = \"${key_path:-/etc/ipshadowt/key.pem}\""
         sni=${sni:-www.google.com}
         msg_ask "Public key (from server --gen-reality-keys): "; read -r pub_key
         msg_ask "Short ID (from server): "; read -r short_id
+        pub_key=$(echo "$pub_key" | tr -d '\r\n" ')
+        short_id=$(echo "$short_id" | tr -d '\r\n" ')
+        if ! [[ "$pub_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            msg_err "Invalid public key (need 64 hex characters)"
+            return
+        fi
+        if ! [[ "$short_id" =~ ^[0-9a-fA-F]{2,16}$ ]]; then
+            msg_err "Invalid short ID (need 2–16 hex characters)"
+            return
+        fi
         reality_section="
 [reality]
 server_name = \"${sni}\"
@@ -544,6 +704,7 @@ remote = \"${wg_remote}\""
 
     # Write config
     mkdir -p "${CONFIG_DIR}"
+    backup_config "${CONFIG_DIR}/config.toml"
     cat > "${CONFIG_DIR}/config.toml" << EOF
 # iPShadowT Client Config — Generated by Manager v${VERSION}
 mode = "client"
@@ -615,8 +776,7 @@ EOF
 
     msg_ask "Start service now? [Y/n]: "; read -r ans
     if [[ "${ans:-y}" =~ ^[Yy]$ ]]; then
-        systemctl restart ${SERVICE_NAME} && sleep 2
-        is_running && msg_ok "Service running!" || msg_err "Failed — journalctl -u ${SERVICE_NAME} -n 10"
+        restart_service_safe "${SERVICE_NAME}" "${CONFIG_DIR}/config.toml" || true
     fi
 }
 
@@ -676,41 +836,20 @@ tls_key = \"${kp:-/etc/ipshadowt/key.pem}\""
     # REALITY for server
     local reality_section=""
     if [ "$transport" = "reality" ]; then
-        echo ""
-        echo -e "  ${W}REALITY Settings:${N}"
-        msg_ask "SNI to mimic [www.google.com]: "; read -r sni
-        sni=${sni:-www.google.com}
-        msg_ask "Fallback dest [www.google.com:443]: "; read -r dest
-        dest=${dest:-www.google.com:443}
-        # Generate keys if binary available
-        if is_installed; then
-            msg_info "Generating REALITY keys..."
-            local keys=$(${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys 2>/dev/null)
-            local priv_key=$(echo "$keys" | grep -i "private" | awk '{print $NF}')
-            local pub_key=$(echo "$keys" | grep -i "public" | awk '{print $NF}')
-            local short_id=$(echo "$keys" | grep -i "short" | awk '{print $NF}')
-            [ -z "$short_id" ] && short_id=$(openssl rand -hex 4)
-            [ -z "$priv_key" ] && { msg_ask "Private key: "; read -r priv_key; }
-            [ -z "$pub_key" ] && { msg_ask "Public key: "; read -r pub_key; }
-        else
-            msg_ask "Private key: "; read -r priv_key
-            msg_ask "Public key: "; read -r pub_key
-            short_id=$(openssl rand -hex 4 2>/dev/null || echo "abcd1234")
-        fi
+        prepare_reality_server || return
+        save_reality_client_meta "${REALITY_META}"
         reality_section="
 [reality]
 server_name = \"${sni}\"
 private_key = \"${priv_key}\"
 short_id = \"${short_id}\"
 dest = \"${dest}\""
-        echo ""
-        echo -e "  ${W}Give these to client:${N}"
-        echo -e "    Public Key: ${G}${pub_key}${N}"
-        echo -e "    Short ID:   ${G}${short_id}${N}"
+        print_reality_share_box
     fi
 
     # Write config
     mkdir -p "${CONFIG_DIR}"
+    backup_config "${CONFIG_DIR}/config.toml"
     cat > "${CONFIG_DIR}/config.toml" << EOF
 # iPShadowT Server Config — Generated by Manager v${VERSION}
 mode = "server"
@@ -736,6 +875,14 @@ keepalive = 15
 buffer_profile = "upload_boost"
 kernel_tuning = true
 
+[anti_dpi]
+enabled = true
+utls_fingerprint = "chrome"
+fragment = false
+padding = true
+padding_size = "16-128"
+traffic_shape = false
+
 [health]
 enabled = true
 listen = "127.0.0.1:9090"
@@ -755,14 +902,18 @@ EOF
     echo -e "  │  Port:      ${G}${port}${N}"
     echo -e "  │  Transport: ${G}${transport}${N}"
     echo -e "  │  Password:  ${G}${password}${N}"
+    if [ "$transport" = "reality" ]; then
+        echo -e "  │  Public Key:${G} ${pub_key}${N}"
+        echo -e "  │  Short ID:  ${G}${short_id}${N}"
+        echo -e "  │  SNI:       ${G}${sni}${N}"
+    fi
     [ -n "$tls_section" ] && echo -e "  │  TLS:       ${G}Enabled${N}"
     echo -e "  └────────────────────────────────────────┘"
     echo ""
 
     msg_ask "Start service now? [Y/n]: "; read -r ans
     if [[ "${ans:-y}" =~ ^[Yy]$ ]]; then
-        systemctl restart ${SERVICE_NAME} && sleep 2
-        is_running && msg_ok "Service running!" || msg_err "Failed — journalctl -u ${SERVICE_NAME} -n 10"
+        restart_service_safe "${SERVICE_NAME}" "${CONFIG_DIR}/config.toml" || true
     fi
 }
 
@@ -821,11 +972,19 @@ export_config() {
         echo "type = \"socks5\""
         echo "listen = \"0.0.0.0:1080\""
 
-        # Show REALITY keys if applicable
+        # REALITY keys from saved meta (public key is not stored in server config.toml)
         if [ "$transport" = "reality" ]; then
-            local pub_key=$(grep 'public_key\|PublicKey' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
-            local short_id=$(grep 'short_id' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
-            local sni=$(grep 'server_name' ${CONFIG_DIR}/config.toml 2>/dev/null | cut -d'"' -f2)
+            load_reality_client_meta "${REALITY_META}"
+            local pub_key="${PUBLIC_KEY:-}"
+            local short_id="${SHORT_ID:-}"
+            local sni="${SNI:-www.google.com}"
+            if [ -z "$pub_key" ] || [ -z "$short_id" ]; then
+                short_id=$(grep -A8 '^\[reality\]' "${CONFIG_DIR}/config.toml" 2>/dev/null | grep 'short_id' | head -1 | cut -d'"' -f2)
+                sni=$(grep -A8 '^\[reality\]' "${CONFIG_DIR}/config.toml" 2>/dev/null | grep 'server_name' | head -1 | cut -d'"' -f2)
+                msg_warn "Public key missing — re-run server setup or enter manually"
+                msg_ask "Public key: "; read -r pub_key
+                [ -z "$short_id" ] && { msg_ask "Short ID: "; read -r short_id; }
+            fi
             echo ""
             echo "[reality]"
             echo "server_name = \"${sni:-www.google.com}\""
@@ -1491,9 +1650,9 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable "$svc" >/dev/null 2>&1
-    systemctl start "$svc"
-    sleep 3
-    systemctl is-active --quiet "$svc" && msg_ok "Tunnel '${tname}' active (SOCKS5 :${sp})" || msg_err "Failed — journalctl -u ${svc} -n 5"
+    if restart_service_safe "$svc" "$cf"; then
+        msg_ok "Tunnel '${tname}' active (SOCKS5 :${sp})"
+    fi
 }
 
 add_server_tunnel() {
@@ -1534,29 +1693,15 @@ tls_key = \"${tk_path:-/etc/ipshadowt/key.pem}\""
     # REALITY for server
     local reality_section=""
     if [ "$transport" = "reality" ]; then
-        echo ""
-        msg_ask "SNI [www.google.com]: "; read -r sni; sni=${sni:-www.google.com}
-        msg_ask "Fallback dest [www.google.com:443]: "; read -r dest; dest=${dest:-www.google.com:443}
-        if is_installed; then
-            msg_info "Generating REALITY keys..."
-            local keys=$(${INSTALL_DIR}/${BINARY_NAME} --gen-reality-keys 2>/dev/null)
-            local priv_key=$(echo "$keys" | grep -i "private" | awk '{print $NF}')
-            local pub_key=$(echo "$keys" | grep -i "public" | awk '{print $NF}')
-            local short_id=$(echo "$keys" | grep -i "short" | awk '{print $NF}')
-            [ -z "$short_id" ] && short_id=$(openssl rand -hex 4)
-            [ -z "$priv_key" ] && { msg_ask "Private key: "; read -r priv_key; }
-            [ -z "$pub_key" ] && { msg_ask "Public key: "; read -r pub_key; }
-        else
-            msg_ask "Private key: "; read -r priv_key
-            msg_ask "Public key: "; read -r pub_key
-            short_id=$(openssl rand -hex 4 2>/dev/null || echo "abcd1234")
-        fi
+        prepare_reality_server || return
+        save_reality_client_meta "${CONFIG_DIR}/.reality-tunnel-${tname}.env"
         reality_section="
 [reality]
 server_name = \"${sni}\"
 private_key = \"${priv_key}\"
 short_id = \"${short_id}\"
 dest = \"${dest}\""
+        print_reality_share_box
     fi
 
     local cf="${CONFIG_DIR}/tunnel-${tname}.toml"
@@ -1585,6 +1730,14 @@ keepalive = 15
 buffer_profile = "upload_boost"
 kernel_tuning = true
 
+[anti_dpi]
+enabled = true
+utls_fingerprint = "chrome"
+fragment = false
+padding = true
+padding_size = "16-128"
+traffic_shape = false
+
 [health]
 enabled = true
 listen = "127.0.0.1:0"
@@ -1608,18 +1761,14 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable "$svc" >/dev/null 2>&1
-    systemctl start "$svc"
-    sleep 2
-    if systemctl is-active --quiet "$svc"; then
+    if restart_service_safe "$svc" "$cf"; then
         local sip=$(curl -s4 --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_IP")
         msg_ok "Server tunnel '${tname}' active on :${port}"
         echo -e "  ${D}Share: IP=${sip} Port=${port} Pass=${pass} Transport=${transport}${N}"
-        if [ -n "$pub_key" ]; then
+        if [ "$transport" = "reality" ]; then
             echo -e "  ${D}REALITY Public Key: ${pub_key}${N}"
             echo -e "  ${D}REALITY Short ID: ${short_id}${N}"
         fi
-    else
-        msg_err "Failed — journalctl -u ${svc} -n 5"
     fi
 }
 
@@ -1742,9 +1891,11 @@ do_update() {
            curl -fsSL -o "$0" "https://raw.githubusercontent.com/${GITHUB_REPO}/master/deploy/ipshadowt-manager.sh" && msg_ok "Updated! Re-run: bash $0" || msg_err "Failed" ;;
         3) local cur=$(get_version)
            local latest=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
-           echo -e "  Current: ${W}${cur}${N}"
-           echo -e "  Latest:  ${W}${latest:-unknown}${N}"
-           [ "$cur" = "$latest" ] && msg_ok "Up to date!" || msg_warn "Update available" ;;
+           echo -e "  Manager script: ${W}v${VERSION}${N}"
+           echo -e "  Binary:         ${W}${cur}${N}"
+           echo -e "  Latest release: ${W}${latest:-unknown}${N}"
+           [ "$cur" = "$latest" ] && msg_ok "Binary up to date!" || msg_warn "Binary update available"
+           ;;
         0) return ;;
     esac
     press_enter
@@ -1817,7 +1968,7 @@ main_menu() {
             local st="${R}Stopped${N}"; is_running && st="${G}Running${N}"
             local tunnels=$(count_tunnels)
             local running=$(count_running)
-            echo -e "  Status: [${st}]  Version: ${W}$(get_version)${N}  Tunnels: ${W}${running}/${tunnels}${N}"
+            echo -e "  Status: [${st}]  Manager: ${W}v${VERSION}${N}  Binary: ${W}$(get_version)${N}  Tunnels: ${W}${running}/${tunnels}${N}"
         else
             echo -e "  ${D}iPShadowT is not installed${N}"
         fi
