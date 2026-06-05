@@ -707,6 +707,26 @@ short_id = \"${short_id}\""
     local suggested=$(find_free_port 1080)
     ask_port "SOCKS5 listen port" "${suggested:-1080}" socks_port
 
+    # Port forwards (e.g. 443,8443,2000-2010)
+    msg_ask "Port forwards (comma-sep, e.g. 443,8443) or empty: "; read -r ports_input
+    local fwd_section=""
+    if [ -n "$ports_input" ]; then
+        local port_list=$(parse_port_range "$ports_input")
+        for p in $port_list; do
+            if ! is_port_free "$p"; then
+                msg_warn "Port ${p} in use — skipping"
+                continue
+            fi
+            fwd_section="${fwd_section}
+[[forwards]]
+name = \"fwd-${p}\"
+type = \"tcp\"
+listen = \"0.0.0.0:${p}\"
+remote = \"${p}\"
+"
+        done
+    fi
+
     # Health check
     echo ""
     msg_ask "Enable health watchdog? [Y/n]: "; read -r wd
@@ -743,18 +763,19 @@ sni_spoof_method = \"${sni_method}\""
     echo -e "    ${C}2)${N} upload_boost   ${D}— max upload speed (recommended for Iran client)${N}"
     echo -e "    ${C}3)${N} high_throughput ${D}— max download speed${N}"
     echo -e "    ${C}4)${N} low_cpu        ${D}— minimal resource usage${N}"
-    msg_ask "Choice [2]: "; read -r perf_choice
-    local perf_profile="upload_boost"
-    local perf_concurrency=8
-    local perf_frame=65535
-    local anti_fragment="false"
-    local anti_padding="false"
+    msg_ask "Choice [1]: "; read -r perf_choice
+    local perf_profile="balanced"
+    local perf_concurrency=4
+    local perf_frame=32768
+    local mux_enabled="true"
+    local anti_fragment="true"
+    local anti_padding="true"
     local anti_traffic_shape="false"
     case $perf_choice in
-        1) perf_profile="balanced"; perf_concurrency=4; anti_fragment="true"; anti_padding="true" ;;
-        3) perf_profile="high_throughput"; perf_concurrency=8; anti_fragment="false"; anti_padding="false" ;;
-        4) perf_profile="low_cpu"; perf_concurrency=2; perf_frame=16384; anti_fragment="true"; anti_padding="true" ;;
-        *) ;; # upload_boost (default)
+        2) perf_profile="upload_boost"; perf_concurrency=8; perf_frame=32768; mux_enabled="false"; anti_fragment="false"; anti_padding="false" ;;
+        3) perf_profile="high_throughput"; perf_concurrency=8; mux_enabled="true"; anti_fragment="false"; anti_padding="false" ;;
+        4) perf_profile="low_cpu"; perf_concurrency=2; perf_frame=16384; mux_enabled="true"; anti_fragment="true"; anti_padding="true" ;;
+        *) ;; # balanced (default)
     esac
 
     # WireGuard forward option
@@ -786,7 +807,7 @@ password = "${password}"
 ${tls_section}
 
 [mux]
-enabled = false
+enabled = ${mux_enabled}
 concurrency = ${perf_concurrency}
 frame_size = ${perf_frame}
 
@@ -822,6 +843,7 @@ name = "socks5"
 type = "socks5"
 listen = "0.0.0.0:${socks_port}"
 ${wg_fwd_section}
+${fwd_section}
 EOF
 
     # Update systemd with watchdog
@@ -933,7 +955,7 @@ ${tls_section}
 [mux]
 enabled = false
 concurrency = 8
-frame_size = 65535
+frame_size = 32768
 
 [heartbeat]
 enabled = true
@@ -1673,7 +1695,7 @@ ${tls_section}
 [mux]
 enabled = false
 concurrency = 8
-frame_size = 65535
+frame_size = 32768
 
 [pool]
 size = 16
@@ -1788,7 +1810,7 @@ ${tls_section}
 [mux]
 enabled = false
 concurrency = 8
-frame_size = 65535
+frame_size = 32768
 
 [heartbeat]
 enabled = true
